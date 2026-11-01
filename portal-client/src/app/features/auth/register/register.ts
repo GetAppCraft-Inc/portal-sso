@@ -25,7 +25,7 @@ export class Register {
     firstName: [''],
     lastName: [''],
     email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
+    password: ['', [Validators.required]], // length and rules: the server policy listed under the field
   });
 
   constructor() {

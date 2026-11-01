@@ -170,15 +170,14 @@ class ApplicationControllerIntegrationTest {
                         .content(jsonMapper.writeValueAsString(app3)))
                 .andExpect(status().isCreated());
 
-        // Regular user should see both enabled apps, but only Company Wiki is accessible
+        // A regular user sees Company Wiki only. Production Cluster is for administrators alone, and
+        // access requests never grant ROLE_ADMIN, so listing it "by request" would be a dead end.
         mockMvc.perform(get("/api/user/applications")
                         .with(user("alice@corp.com").roles("USER")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Company Wiki"))
-                .andExpect(jsonPath("$[0].accessible").value(true))
-                .andExpect(jsonPath("$[1].name").value("Production Cluster"))
-                .andExpect(jsonPath("$[1].accessible").value(false));
+                .andExpect(jsonPath("$[0].accessible").value(true));
 
         // Admin user should see both enabled apps ("Company Wiki" and "Production Cluster"), but not disabled
         mockMvc.perform(get("/api/user/applications")
@@ -284,6 +283,103 @@ class ApplicationControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.authenticated").value(true))
                 .andExpect(jsonPath("$.user.email").value("new-user@example.com"));
+    }
+
+    @Test
+    void aTileWithASignInUrlStartsTheAppsSignInSoTheUserArrivesSignedIn() throws Exception {
+        CreateApplicationRequest withLogin = new CreateApplicationRequest(
+                "Grafana", "Dashboards", "https://grafana.example.com/d/home?org=1&tab=a", null, "Ops", null,
+                ApplicationAccessType.ALL_USERS, List.of(), true, 1, false, true,
+                "https://grafana.example.com/login/generic_oauth");
+        CreateApplicationRequest plain = new CreateApplicationRequest(
+                "Wiki", "Docs", "https://wiki.example.com", null, "General", null,
+                ApplicationAccessType.ALL_USERS, List.of(), true, 2, false, true);
+        for (CreateApplicationRequest r : List.of(withLogin, plain)) {
+            mockMvc.perform(post("/api/admin/applications")
+                            .with(user("admin@portalsso.local").roles("ADMIN"))
+                            .with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(jsonMapper.writeValueAsString(r)))
+                    .andExpect(status().isCreated());
+        }
+
+        String body = mockMvc.perform(get("/api/user/applications").with(user("alice@corp.com").roles("USER")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("Grafana"))
+                .andExpect(jsonPath("$[0].signsInDirectly").value(true))
+                .andExpect(jsonPath("$[1].launchUrl").value("https://wiki.example.com"))
+                .andExpect(jsonPath("$[1].signsInDirectly").value(false))
+                .andReturn().getResponse().getContentAsString();
+
+        var launch = org.springframework.web.util.UriComponentsBuilder
+                .fromUriString(jsonMapper.readTree(body).get(0).get("launchUrl").asText()).build();
+        assertThat(launch.getPath()).isEqualTo("/login/generic_oauth");
+        assertThat(launch.getQueryParams().getFirst("iss")).isNotBlank();
+        // The app URL's own query survives intact as one encoded parameter.
+        assertThat(java.net.URLDecoder.decode(launch.getQueryParams().getFirst("target_link_uri"), java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo("https://grafana.example.com/d/home?org=1&tab=a");
+    }
+
+    @Test
+    void externalLoginFailuresLockTheAccountLikeTheSignInPage() throws Exception {
+        UUID appId = createApplication("Guess Target", true);
+        String apiKey = jsonMapper.readTree(mockMvc.perform(post("/api/admin/applications/" + appId + "/external-auth/api-key")
+                                .with(user("admin@portalsso.local").roles("ADMIN"))
+                                .with(csrf()))
+                        .andReturn().getResponse().getContentAsString())
+                .get("apiKey").asText();
+        mockMvc.perform(post("/api/external/apps/" + appId + "/register")
+                        .header("X-Portal-App-Key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonMapper.writeValueAsString(
+                                new RegisterRequest("victim@example.com", "Str0ngPassw0rd", "V", "Ictim"))))
+                .andExpect(status().isCreated());
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/external/apps/" + appId + "/login")
+                            .header("X-Portal-App-Key", apiKey)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(jsonMapper.writeValueAsString(
+                                    new ExternalAppLoginRequest("victim@example.com", "guess-" + i))))
+                    .andExpect(jsonPath("$.code").value("PRTL-1003"));
+        }
+
+        // Locked now — and the right password no longer tells the guesser anything different.
+        mockMvc.perform(post("/api/external/apps/" + appId + "/login")
+                        .header("X-Portal-App-Key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonMapper.writeValueAsString(
+                                new ExternalAppLoginRequest("Victim@Example.com", "Str0ngPassw0rd"))))
+                .andExpect(jsonPath("$.code").value("PRTL-1004"));
+    }
+
+    @Test
+    void externalRegistrationNeverGrantsAdministrator() throws Exception {
+        CreateApplicationRequest adminOnly = new CreateApplicationRequest(
+                "Admin Tool", "Admins only", "https://admin-tool.example.com", null, "General", null,
+                ApplicationAccessType.RESTRICTED,
+                List.of(roleRepository.findByName("ROLE_ADMIN").orElseThrow().getId()), true, 1, true, true);
+        UUID appId = UUID.fromString(jsonMapper.readTree(mockMvc.perform(post("/api/admin/applications")
+                                .with(user("admin@portalsso.local").roles("ADMIN"))
+                                .with(csrf())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(jsonMapper.writeValueAsString(adminOnly)))
+                        .andExpect(status().isCreated())
+                        .andReturn().getResponse().getContentAsString())
+                .get("id").asText());
+        String apiKey = jsonMapper.readTree(mockMvc.perform(post("/api/admin/applications/" + appId + "/external-auth/api-key")
+                                .with(user("admin@portalsso.local").roles("ADMIN"))
+                                .with(csrf()))
+                        .andReturn().getResponse().getContentAsString())
+                .get("apiKey").asText();
+
+        mockMvc.perform(post("/api/external/apps/" + appId + "/register")
+                        .header("X-Portal-App-Key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonMapper.writeValueAsString(
+                                new RegisterRequest("stranger@example.com", "Str0ngPassw0rd", "S", "Tranger"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.user.roles").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("ROLE_ADMIN"))));
     }
 
     @Test

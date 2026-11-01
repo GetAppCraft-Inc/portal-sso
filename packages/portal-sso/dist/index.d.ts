@@ -26,6 +26,18 @@ export declare class PortalSSO {
      */
     loginWithRedirect(redirectUri?: string): Promise<void>;
     /**
+     * Completes "open from Portal SSO" (OIDC third-party initiated login). When a user opens this app
+     * from the Portal SSO launchpad, the page is loaded with `?iss=<portal>&target_link_uri=<page>`.
+     * Call this early on that page: it starts sign-in straight away, and because the user already has
+     * a Portal session they come back signed in without seeing a login form. After
+     * `handleRedirectCallback()` completes, they are sent on to `target_link_uri` (same origin only).
+     *
+     * @param redirectUri the registered redirect URI to come back to. Defaults to this page without its
+     *     query string — the full URL would carry `?iss=…`, which never matches a registered URI.
+     * @returns true when a redirect to Portal SSO was started.
+     */
+    handleInitiatedLogin(redirectUri?: string): Promise<boolean>;
+    /**
      * Processes the authorization code callback from a full-page redirect.
      */
     handleRedirectCallback(): Promise<PortalSession | null>;

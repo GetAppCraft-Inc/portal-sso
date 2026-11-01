@@ -2,10 +2,12 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { Subject, debounceTime } from 'rxjs';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { passwordChecklist } from '../../../../core/services/account.service';
 import { AuthService } from '../../../../core/services/auth.service';
+import { RegistrationService } from '../../../../core/services/registration.service';
 import { SnackbarService } from '../../../../core/services/snackbar.service';
 import { Badge } from '../../../../shared/components/badge/badge';
 import { PortalRole } from '../../../roles/models/role.model';
@@ -91,15 +93,24 @@ export class UserList {
 
   readonly createForm = this.fb.nonNullable.group({
     email: ['', [Validators.required, Validators.email]],
-    password: ['', [Validators.required, Validators.minLength(8)]],
+    // Length and character rules come from the server's policy (checklist below), not a hardcoded
+    // 8 that the server then rejected at 10.
+    password: ['', [Validators.required]],
     firstName: [''],
     lastName: [''],
     isAdmin: [false],
   });
 
   private readonly route = inject(ActivatedRoute);
+  private readonly registrationService = inject(RegistrationService);
+  private readonly createPassword = toSignal(this.createForm.controls.password.valueChanges, { initialValue: '' });
+  readonly passwordRules = computed(() => {
+    const policy = this.registrationService.policy().passwordPolicy;
+    return policy ? passwordChecklist(policy, this.createPassword()) : [];
+  });
 
   constructor() {
+    this.registrationService.loadPolicy().subscribe();
     // The command palette links here with ?search=…; without this the list would open unfiltered
     // and quietly ignore what the user just typed.
     const initial = this.route.snapshot.queryParamMap.get('search');

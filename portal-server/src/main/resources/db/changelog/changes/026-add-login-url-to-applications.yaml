@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 026-add-login-url-to-applications
+      author: ai-agent
+      comment: >
+        The app's "start sign-in" address (OIDC third-party initiated login, initiate_login_uri).
+        When set, launching the app from My Apps goes here with ?iss=…&target_link_uri=…, the app
+        redirects straight to Portal SSO, finds the session already there, and the user arrives
+        signed in instead of on the app's own login page. Null keeps the old behaviour (open appUrl).
+      changes:
+        - addColumn:
+            tableName: applications
+            columns:
+              - column:
+                  name: login_url
+                  type: VARCHAR(1000)
+                  constraints:
+                    nullable: true

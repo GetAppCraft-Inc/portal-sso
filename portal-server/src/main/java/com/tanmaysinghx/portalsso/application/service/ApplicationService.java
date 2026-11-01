@@ -42,6 +42,9 @@ public class ApplicationService {
     private final UserRepository userRepository;
     private final OAuthClientRepository oAuthClientRepository;
 
+    /** Sent as {@code iss} when a tile starts the app's sign-in; see {@link Application#launchUrl}. */
+    private final String issuerUrl;
+
     public ApplicationService(
             ApplicationRepository applicationRepository,
             RoleRepository roleRepository,
@@ -49,7 +52,8 @@ public class ApplicationService {
             PasswordEncoder passwordEncoder,
             AccessRequestRepository accessRequestRepository,
             UserRepository userRepository,
-            OAuthClientRepository oAuthClientRepository) {
+            OAuthClientRepository oAuthClientRepository,
+            @org.springframework.beans.factory.annotation.Value("${spring.security.oauth2.authorizationserver.issuer:http://localhost:8080}") String issuerUrl) {
         this.applicationRepository = applicationRepository;
         this.roleRepository = roleRepository;
         this.auditService = auditService;
@@ -57,6 +61,7 @@ public class ApplicationService {
         this.accessRequestRepository = accessRequestRepository;
         this.userRepository = userRepository;
         this.oAuthClientRepository = oAuthClientRepository;
+        this.issuerUrl = issuerUrl;
     }
 
     @Transactional(readOnly = true)
@@ -97,6 +102,7 @@ public class ApplicationService {
     @Transactional
     public ApplicationResponse create(CreateApplicationRequest request) {
         Application app = new Application(request.name().trim(), request.appUrl().trim());
+        app.setLoginUrl(request.loginUrl());
         app.setDescription(request.description() != null ? request.description().trim() : null);
         app.setIconUrl(request.iconUrl() != null && !request.iconUrl().isBlank() ? request.iconUrl().trim() : null);
         app.setCategory(request.category() != null && !request.category().isBlank() ? request.category().trim() : "General");
@@ -134,6 +140,9 @@ public class ApplicationService {
 
         app.setName(request.name().trim());
         app.setAppUrl(request.appUrl().trim());
+        if (request.loginUrl() != null) {
+            app.setLoginUrl(request.loginUrl());
+        }
         app.setDescription(request.description() != null ? request.description().trim() : null);
         app.setIconUrl(request.iconUrl() != null && !request.iconUrl().isBlank() ? request.iconUrl().trim() : null);
         app.setCategory(request.category() != null && !request.category().isBlank() ? request.category().trim() : "General");
@@ -246,6 +255,9 @@ public class ApplicationService {
 
         Set<UUID> finalPendingAppIds = pendingAppIds;
         return allApps.stream()
+                // An app only administrators may open cannot be requested (approval never grants
+                // ROLE_ADMIN), so listing it under "By request" would only invite dead-end requests.
+                .filter(app -> isAdmin || !app.isAdminOnly())
                 .map(app -> {
                     boolean accessible;
                     if (isAdmin) {
@@ -257,7 +269,7 @@ public class ApplicationService {
                                 .anyMatch(r -> userRoleNames.contains(r.getName()));
                     }
                     String pendingStatus = finalPendingAppIds.contains(app.getId()) ? "PENDING" : null;
-                    return UserApplicationResponse.from(app, accessible, pendingStatus);
+                    return UserApplicationResponse.from(app, accessible, pendingStatus, issuerUrl);
                 })
                 .toList();
     }

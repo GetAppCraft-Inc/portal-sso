@@ -148,13 +148,13 @@
               <p class="mt-1 line-clamp-2 text-sm leading-5 text-ink-500">{{ app.description || app.appUrl }}</p>
             </div>
             <a
-              [href]="app.appUrl"
+              [href]="app.launchUrl"
               target="_blank"
               rel="noopener noreferrer"
-              [attr.aria-label]="'Open ' + app.name + ' in a new tab'"
+              [attr.aria-label]="(app.signsInDirectly ? 'Sign in to ' : 'Open ') + app.name + ' in a new tab'"
               class="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-ink-900 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ink-800 focus:outline-none focus:ring-2 focus:ring-brand-500/25"
             >
-              Open
+              {{ app.signsInDirectly ? 'Open & sign in' : 'Open' }}
               <svg class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
               </svg>

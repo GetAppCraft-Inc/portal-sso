@@ -335,11 +335,20 @@
             id="create-password"
             type="password"
             formControlName="password"
-            placeholder="Minimum 8 characters"
+            placeholder="Meets the password policy"
             autocomplete="new-password"
+            aria-describedby="create-password-rules"
             [class]="inputClasses('password')"
           />
-          <p class="mt-1 text-[11px] text-ink-500">Must be at least 8 characters long.</p>
+          <ul id="create-password-rules" class="mt-1.5 grid grid-cols-1 gap-0.5 sm:grid-cols-2">
+            @for (rule of passwordRules(); track rule.label) {
+              <li class="flex items-center gap-1.5 text-[11px]" [class]="rule.met ? 'text-emerald-700' : 'text-ink-500'">
+                <span aria-hidden="true">{{ rule.met ? '✓' : '•' }}</span>
+                <span>{{ rule.label }}</span>
+                <span class="sr-only">{{ rule.met ? '(met)' : '(not met)' }}</span>
+              </li>
+            }
+          </ul>
         </div>
 
         <div class="rounded-xl border border-ink-200 bg-ink-50/70 p-3.5">

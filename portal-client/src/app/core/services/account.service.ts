@@ -82,7 +82,10 @@ export class AccountService {
  * The policy as a checklist, evaluated against what has been typed so far. Mirrors
  * `PasswordPolicy.failures` on the server, which stays the authority — this only saves a round trip.
  */
-export function passwordChecklist(policy: PasswordPolicy, value: string): { label: string; met: boolean }[] {
+export function passwordChecklist(
+  policy: Pick<PasswordPolicy, 'minLength' | 'requireUppercase' | 'requireLowercase' | 'requireDigit' | 'requireSymbol'>,
+  value: string,
+): { label: string; met: boolean }[] {
   const rules = [{ label: `At least ${policy.minLength} characters`, met: value.length >= policy.minLength }];
   if (policy.requireUppercase) rules.push({ label: 'An upper-case letter', met: /[A-Z]/.test(value) });
   if (policy.requireLowercase) rules.push({ label: 'A lower-case letter', met: /[a-z]/.test(value) });

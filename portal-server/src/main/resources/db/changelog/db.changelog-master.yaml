@@ -47,3 +47,7 @@ databaseChangeLog:
       file: db/changelog/changes/023-add-password-changed-at-to-users.yaml
   - include:
       file: db/changelog/changes/024-create-password-reset-tokens-table.yaml
+  - include:
+      file: db/changelog/changes/025-normalize-user-emails.yaml
+  - include:
+      file: db/changelog/changes/026-add-login-url-to-applications.yaml

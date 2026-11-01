@@ -27,6 +27,10 @@ public class Application extends BaseEntity {
     @Column(name = "app_url", nullable = false, length = 1000)
     private String appUrl;
 
+    /** Where the app starts its Portal SSO sign-in (OIDC initiate_login_uri). Optional. */
+    @Column(name = "login_url", length = 1000)
+    private String loginUrl;
+
     @Column(name = "icon_url", length = 1000)
     private String iconUrl;
 
@@ -184,5 +188,44 @@ public class Application extends BaseEntity {
 
     public void setRoles(Set<Role> roles) {
         this.roles = roles;
+    }
+
+    public String getLoginUrl() {
+        return loginUrl;
+    }
+
+    public void setLoginUrl(String loginUrl) {
+        this.loginUrl = loginUrl == null || loginUrl.isBlank() ? null : loginUrl.strip();
+    }
+
+    /**
+     * What a tile on My Apps opens. With a sign-in URL this is OIDC third-party initiated login:
+     * {@code iss} tells the app which provider to use and {@code target_link_uri} where to land, the
+     * app redirects to /oauth2/authorize, the Portal session is already there, and the user arrives
+     * signed in. Without one, the app's home page — where the user may meet its own login screen.
+     */
+    public String launchUrl(String issuer) {
+        if (loginUrl == null) {
+            return appUrl;
+        }
+        // Values go in as template variables: those are encoded strictly, so an appUrl carrying its
+        // own ?a=1&b=2 stays one parameter instead of spilling into the sign-in URL's query.
+        return org.springframework.web.util.UriComponentsBuilder.fromUriString(loginUrl)
+                .queryParam("iss", "{iss}")
+                .queryParam("target_link_uri", "{target}")
+                .encode()
+                .buildAndExpand(issuer, appUrl)
+                .toUriString();
+    }
+
+    /**
+     * Restricted to roles of which ROLE_ADMIN is the only one. Access to such an app can never be
+     * requested or self-registered, because neither path is allowed to grant ROLE_ADMIN.
+     */
+    public boolean isAdminOnly() {
+        return accessType == ApplicationAccessType.RESTRICTED
+                && roles != null
+                && !roles.isEmpty()
+                && roles.stream().allMatch(r -> "ROLE_ADMIN".equals(r.getName()));
     }
 }

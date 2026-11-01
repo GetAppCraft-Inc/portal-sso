@@ -58,6 +58,7 @@ public class AuthPageController {
     private final MagicLinkService magicLinkService;
     private final SignInCompletion signInCompletion;
     private final PasswordResetService passwordResetService;
+    private final ReturnUrlPolicy returnUrlPolicy;
 
     public AuthPageController(
             OAuthClientRepository clientRepository,
@@ -67,7 +68,8 @@ public class AuthPageController {
             ApplicationEventPublisher eventPublisher,
             MagicLinkService magicLinkService,
             SignInCompletion signInCompletion,
-            PasswordResetService passwordResetService) {
+            PasswordResetService passwordResetService,
+            ReturnUrlPolicy returnUrlPolicy) {
         this.clientRepository = clientRepository;
         this.consentService = consentService;
         this.mfaService = mfaService;
@@ -76,6 +78,7 @@ public class AuthPageController {
         this.magicLinkService = magicLinkService;
         this.signInCompletion = signInCompletion;
         this.passwordResetService = passwordResetService;
+        this.returnUrlPolicy = returnUrlPolicy;
     }
 
     @GetMapping("/login")
@@ -102,10 +105,9 @@ public class AuthPageController {
                 if (returnUrl == null || returnUrl.isBlank()) {
                     returnUrl = request.getParameter("redirect_uri");
                 }
-                if (returnUrl != null && !returnUrl.isBlank()) {
-                    return "redirect:" + returnUrl;
-                }
-                return "redirect:/";
+                return returnUrlPolicy.accept(returnUrl)
+                        .map(url -> "redirect:" + url)
+                        .orElse("redirect:/");
             }
         }
 

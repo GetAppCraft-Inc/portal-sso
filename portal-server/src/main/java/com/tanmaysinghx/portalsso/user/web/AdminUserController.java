@@ -56,6 +56,8 @@ public class AdminUserController {
     private final com.tanmaysinghx.portalsso.user.service.UserImportService userImportService;
     private final NotificationService notificationService;
     private final KnownDeviceService knownDeviceService;
+    private final org.springframework.session.FindByIndexNameSessionRepository<? extends org.springframework.session.Session> sessionRepository;
+    private final com.tanmaysinghx.portalsso.client.security.OAuth2GrantRevoker grantRevoker;
 
     public AdminUserController(
             UserRepository userRepository,
@@ -68,7 +70,9 @@ public class AdminUserController {
             PasswordPolicy passwordPolicy,
             com.tanmaysinghx.portalsso.user.service.UserImportService userImportService,
             NotificationService notificationService,
-            KnownDeviceService knownDeviceService) {
+            KnownDeviceService knownDeviceService,
+            org.springframework.session.FindByIndexNameSessionRepository<? extends org.springframework.session.Session> sessionRepository,
+            com.tanmaysinghx.portalsso.client.security.OAuth2GrantRevoker grantRevoker) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
@@ -80,6 +84,8 @@ public class AdminUserController {
         this.userImportService = userImportService;
         this.notificationService = notificationService;
         this.knownDeviceService = knownDeviceService;
+        this.sessionRepository = sessionRepository;
+        this.grantRevoker = grantRevoker;
     }
 
     /**
@@ -173,13 +179,26 @@ public class AdminUserController {
         user.setEnabled(request.enabled());
         User saved = userRepository.save(user);
 
+        // Disabling is how someone is offboarded, so it has to take effect now: end their console
+        // sessions and revoke what their apps hold. "Enabled" is otherwise only checked at sign-in.
+        String revoked = null;
+        if (!request.enabled()) {
+            int sessions = 0;
+            for (String sessionId : java.util.Map.copyOf(sessionRepository.findByPrincipalName(saved.getEmail())).keySet()) {
+                sessionRepository.deleteById(sessionId);
+                sessions++;
+            }
+            int grants = grantRevoker.revokeAllForPrincipal(saved.getEmail());
+            revoked = "endedSessions=%d, revokedAuthorizations=%d".formatted(sessions, grants);
+        }
+
         // Two actions rather than one "USER_ENABLED_CHANGED" with a flag: locking an account out is
         // the event someone investigating an outage searches for, and it should be one filter away.
         auditService.record(
                 request.enabled() ? AuditAction.USER_ENABLED : AuditAction.USER_DISABLED,
                 saved.getId(),
                 saved.getEmail(),
-                null);
+                revoked);
 
         return UserResponse.from(saved);
     }

@@ -219,7 +219,27 @@ interface PortalSSOConfig {
 - `loginWithRedirect(redirectUri?: string): Promise<void>`  
   Triggers standard full-page browser redirect.
 - `handleRedirectCallback(): Promise<PortalSession | null>`  
-  Handles authorization code exchange after full-page redirect.
+  Handles authorization code exchange after full-page redirect. If the sign-in was started from the
+  Portal SSO launchpad, it then continues to the page the launchpad asked for.
+- `handleInitiatedLogin(redirectUri?: string): Promise<boolean>`  
+  Signs the user in straight away when they open your app from **My Apps** in Portal SSO.
+
+### Open from My Apps, already signed in
+
+When an administrator sets your app's **Sign-in URL** in Portal SSO, the launchpad opens that page with
+`?iss=<portal>&target_link_uri=<page>` (OIDC third-party initiated login). Call this on that page:
+
+```js
+const portal = new PortalSSO({ portalUrl: 'https://sso.example.com', clientId: 'my-app' });
+
+// On the redirect URI page, finish any sign-in that is coming back…
+await portal.handleRedirectCallback();
+// …and on the Sign-in URL page, start one if the launchpad sent the user here.
+await portal.handleInitiatedLogin('https://app.example.com/callback');
+```
+
+The user already has a Portal session, so they never see a login form. `iss` must equal `portalUrl`;
+anything else is ignored. `target_link_uri` is only followed on your own origin.
 
 ---
 

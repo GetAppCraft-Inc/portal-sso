@@ -1,6 +1,6 @@
 {
   "name": "@tanmaysinghx/portal-sso",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zero-boilerplate OAuth 2.1 & OIDC Single Sign-On SDK with Okta-style popup login and drop-in UI button.",
   "main": "dist/index.js",
   "module": "dist/index.js",
