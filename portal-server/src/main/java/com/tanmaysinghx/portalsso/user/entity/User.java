@@ -66,9 +66,14 @@ public class User extends BaseEntity {
     }
 
     public User(String email, String passwordHash) {
-        this.email = email;
+        this.email = normalizeEmail(email);
         this.passwordHash = passwordHash;
         this.passwordChangedAt = Instant.now();
+    }
+
+    /** Email is the sign-in name, so it is stored one way: trimmed and lower-case. */
+    public static String normalizeEmail(String email) {
+        return email == null ? null : email.strip().toLowerCase(java.util.Locale.ROOT);
     }
 
     public String getEmail() {
@@ -76,7 +81,7 @@ public class User extends BaseEntity {
     }
 
     public void setEmail(String email) {
-        this.email = email;
+        this.email = normalizeEmail(email);
     }
 
     public String getPasswordHash() {

@@ -11,6 +11,8 @@ export interface Application {
   name: string;
   description: string | null;
   appUrl: string;
+  /** OIDC initiate_login_uri: where launching from My Apps starts the app's sign-in. */
+  loginUrl: string | null;
   iconUrl: string | null;
   category: string;
   clientId: string | null;
@@ -31,6 +33,10 @@ export interface UserApplication {
   name: string;
   description: string | null;
   appUrl: string;
+  /** What the tile opens: the app's sign-in with iss + target_link_uri, or appUrl. */
+  launchUrl: string;
+  /** True when launchUrl signs the user in directly rather than opening the home page. */
+  signsInDirectly: boolean;
   iconUrl: string | null;
   category: string;
   clientId: string | null;
@@ -51,6 +57,7 @@ export interface CreateApplicationRequest {
   displayOrder?: number;
   externalAuthEnabled?: boolean;
   externalRegistrationEnabled?: boolean;
+  loginUrl?: string;
 }
 
 export interface UpdateApplicationRequest {
@@ -66,6 +73,8 @@ export interface UpdateApplicationRequest {
   displayOrder?: number;
   externalAuthEnabled?: boolean;
   externalRegistrationEnabled?: boolean;
+  /** Empty string clears it. */
+  loginUrl?: string;
 }
 
 /** Optional new OAuth client created alongside the app. Every field has a server-side default. */

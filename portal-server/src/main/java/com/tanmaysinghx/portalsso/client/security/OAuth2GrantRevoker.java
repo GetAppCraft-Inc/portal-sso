@@ -51,4 +51,21 @@ public class OAuth2GrantRevoker {
         }
         return authorizations + consents;
     }
+
+    /**
+     * Deletes every authorization issued to one person, across all clients, so their refresh tokens
+     * stop working. Used when an account is disabled: Spring only checks "enabled" at sign-in, so
+     * without this an offboarded user's apps kept refreshing for the refresh token's whole lifetime.
+     * Consents are kept — they record a decision, not a credential. Already-issued JWT access tokens
+     * are self-contained and simply run out (minutes).
+     */
+    @Transactional
+    public int revokeAllForPrincipal(String principalName) {
+        int authorizations =
+                jdbcTemplate.update("DELETE FROM oauth2_authorization WHERE principal_name = ?", principalName);
+        if (authorizations > 0) {
+            log.info("Revoked {} authorization(s) for {}", authorizations, principalName);
+        }
+        return authorizations;
+    }
 }

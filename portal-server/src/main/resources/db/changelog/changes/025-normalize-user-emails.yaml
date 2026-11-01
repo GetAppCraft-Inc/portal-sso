@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 025-normalize-user-emails
+      author: ai-agent
+      comment: >
+        Addresses are now stored trimmed and lower-case (User.normalizeEmail) and looked up the
+        same way. Accounts created through the admin API kept whatever case was typed, so they
+        would no longer be found. Rows whose lower-case form already belongs to another account
+        are left alone rather than failing the unique constraint; an administrator has to merge
+        those by hand. The derived table keeps MySQL from refusing a subquery on the table being
+        updated (error 1093); it is portable to PostgreSQL and H2 as well.
+      changes:
+        - sql:
+            sql: >
+              UPDATE users SET email = LOWER(TRIM(email))
+              WHERE email <> LOWER(TRIM(email))
+              AND LOWER(TRIM(email)) NOT IN (
+                SELECT e FROM (SELECT LOWER(TRIM(email)) AS e FROM users WHERE email = LOWER(TRIM(email))) existing
+              )

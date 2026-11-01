@@ -126,6 +126,17 @@ Use any standards-compliant OIDC client with discovery at \`${creds.discoveryUrl
 \`redirect_uri = PORTAL_REDIRECT_URI\`${oidc.confidential ? ', and client authentication `client_secret_basic` (or `client_secret_post`) using `PORTAL_CLIENT_ID` / `PORTAL_CLIENT_SECRET`' : ', token endpoint auth method `none`'}.
 
 Validate tokens with the JWKS from discovery (RS256). Do not decode JWTs without verifying the signature.`);
+
+    sections.push(`## Open from My Apps — arrive signed in
+
+Users also open this app from the Portal SSO launchpad. Give it one URL that **starts sign-in** (a "Sign in with Portal SSO" route) and tell the admin to enter it as the app's **Sign-in URL** in Portal SSO. The launchpad then opens
+\`<sign-in URL>?iss=${creds.issuerUrl}&target_link_uri=<app page>\` (OIDC third-party initiated login).
+
+On that route: if \`iss\` equals \`PORTAL_URL\`, start the normal authorization request immediately — the user already has a Portal session, so they come straight back signed in with no login form. Ignore any other \`iss\`. After sign-in, go to \`target_link_uri\` only if it is on this app's own origin.
+
+- SDK: call \`await sso.handleInitiatedLogin(PORTAL_REDIRECT_URI)\` on that page.
+- Spring Boot: the sign-in URL is \`/oauth2/authorization/<registrationId>\`.
+- Other stacks: your library's "start login" route.`);
   }
 
   if (ext) {
@@ -144,7 +155,7 @@ The login call validates credentials and returns user details and whether MFA is
 
 - [ ] Config comes only from the env vars above; \`.env\` is git-ignored and \`.env.example\` lists names only.
 - [ ] Sign-in round-trips successfully against \`${creds.issuerUrl}\`.
-- [ ] No secret appears in client bundles, logs, or source control.
+${oidc ? '- [ ] There is a sign-in URL that starts the flow on `?iss=`, so opening the app from My Apps lands signed in. Tell the admin to set it.\n' : ''}- [ ] No secret appears in client bundles, logs, or source control.
 `);
 
   return sections.join('\n\n');

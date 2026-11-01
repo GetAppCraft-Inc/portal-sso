@@ -203,7 +203,7 @@ public class ApplicationOnboardingService {
         return new CreateApplicationRequest(
                 r.name(), r.description(), r.appUrl(), r.iconUrl(), r.category(), clientId,
                 r.accessType(), r.roleIds(), r.enabled(), r.displayOrder(),
-                r.externalAuthEnabled(), r.externalRegistrationEnabled());
+                r.externalAuthEnabled(), r.externalRegistrationEnabled(), r.loginUrl());
     }
 
     private static List<String> clean(List<String> values) {

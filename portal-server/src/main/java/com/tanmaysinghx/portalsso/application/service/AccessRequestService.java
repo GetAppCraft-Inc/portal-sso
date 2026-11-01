@@ -18,6 +18,7 @@ import com.tanmaysinghx.portalsso.common.error.ResourceNotFoundException;
 import com.tanmaysinghx.portalsso.user.entity.Role;
 import com.tanmaysinghx.portalsso.user.entity.User;
 import com.tanmaysinghx.portalsso.user.repository.RoleRepository;
+import com.tanmaysinghx.portalsso.user.service.RoleService;
 import com.tanmaysinghx.portalsso.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -63,6 +64,10 @@ public class AccessRequestService {
 
         if (app.getAccessType() == ApplicationAccessType.ALL_USERS) {
             throw new BusinessRuleViolationException(ErrorCode.ACCESS_ALREADY_GRANTED, "This application is open to all users.");
+        }
+        if (app.isAdminOnly()) {
+            throw new BusinessRuleViolationException(
+                    ErrorCode.ACCESS_DENIED, "This application is for administrators only and cannot be requested.");
         }
 
         boolean hasAccess = app.getRoles().stream()
@@ -112,14 +117,27 @@ public class AccessRequestService {
         Application app = applicationRepository.findByIdWithRoles(ar.getApplication().getId())
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.APPLICATION_NOT_FOUND, "Application not found"));
 
-        User user = ar.getUser();
-        List<String> addedRoles = app.getRoles().stream()
+        // Approving access to one app must never make someone an administrator of the whole
+        // server. Before this filter, approving a request for an app restricted to ROLE_ADMIN
+        // granted ROLE_ADMIN — full console access from one click on "approve".
+        List<Role> grantable = app.getRoles().stream()
+                .filter(role -> !RoleService.ADMIN_ROLE.equals(role.getName()))
+                .toList();
+        if (grantable.isEmpty()) {
+            throw new BusinessRuleViolationException(
+                    ErrorCode.ACCESS_DENIED,
+                    "This application is restricted to administrators. Approving would make the requester an "
+                            + "administrator of Portal SSO; grant that from Users if it is really intended.");
+        }
+
+        User user = userRepository.findByIdWithRoles(ar.getUser().getId())
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.USER_NOT_FOUND, "User not found"));
+        List<String> addedRoles = grantable.stream()
+                .filter(role -> user.getRoles().stream().noneMatch(r -> r.getName().equals(role.getName())))
                 .map(Role::getName)
                 .collect(Collectors.toList());
 
-        for (Role r : app.getRoles()) {
-            user.addRole(r);
-        }
+        grantable.forEach(user::addRole);
         userRepository.save(user);
 
         ar.setStatus(AccessRequestStatus.APPROVED);

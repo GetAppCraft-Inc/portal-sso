@@ -129,8 +129,9 @@
           <label for="role-name" class="mb-1 block text-xs font-medium text-ink-700">Name <span class="text-red-500">*</span></label>
           <input id="role-name" type="text" formControlName="name" placeholder="ROLE_SUPPORT" [class]="nameInputClasses()" />
           <p class="mt-1 text-[11px] text-ink-500">
-            Must start with <code class="font-mono">ROLE_</code>, then upper-case letters, digits or underscores.
-            Authorization checks look for this exact string, and it cannot be changed later.
+            Will be created as <code class="font-mono font-semibold text-ink-800">{{ normalizedName() }}</code>.
+            Letters, digits and underscores; <code class="font-mono">ROLE_</code> is added for you. Apps see this
+            exact string in the <code class="font-mono">roles</code> claim, and it cannot be changed later.
           </p>
         </div>
 

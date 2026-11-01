@@ -175,6 +175,24 @@ oauth.register(
 `provider=oidc`, `oidc_issuer_url=$PORTAL_URL`, `code_challenge_method=S256`, and read the
 `X-Forwarded-Email` / `X-Forwarded-User` headers.
 
+### Open from My Apps: arrive signed in
+
+Users also open the app from the Portal SSO launchpad. Give the app one URL that **starts sign-in**
+and have the admin enter it as the app's **Sign-in URL** in Portal SSO. The launchpad then opens
+`<sign-in URL>?iss=$PORTAL_URL&target_link_uri=<app page>` (OIDC third-party initiated login).
+
+On that route: if `iss` equals `PORTAL_URL`, start the normal authorization request at once. The
+user already has a Portal session, so they come straight back signed in without seeing a login form.
+Ignore any other `iss`. After sign-in, go to `target_link_uri` only if it is on the app's own origin.
+
+| Stack | Sign-in URL |
+|---|---|
+| JS SDK | Any page that calls `await sso.handleInitiatedLogin(PORTAL_REDIRECT_URI)` |
+| Spring Boot | `/oauth2/authorization/<registrationId>` |
+| oauth2-proxy | `/oauth2/start` |
+| Grafana | `/login/generic_oauth` |
+| Others | The library's "start login" route |
+
 ---
 
 ## 5. API backend: validate bearer tokens
@@ -256,6 +274,7 @@ app manages its own session. If `mfaRequired` is true, send the user through the
 
 - [ ] All Portal values come from env vars; `.env` is git-ignored; `.env.example` lists names only.
 - [ ] Sign-in completes end to end against `PORTAL_URL`.
+- [ ] A sign-in URL starts the flow on `?iss=`, so opening the app from My Apps lands signed in; the admin has set it.
 - [ ] PKCE S256 is sent on every authorization request.
 - [ ] Backend validates token signature, issuer and expiry before trusting claims.
 - [ ] No secret in client bundles, logs, test fixtures or git history.

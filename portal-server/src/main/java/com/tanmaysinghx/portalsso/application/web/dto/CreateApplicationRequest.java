@@ -39,4 +39,19 @@ public record CreateApplicationRequest(
 
         Boolean externalAuthEnabled,
 
-        Boolean externalRegistrationEnabled) {}
+        Boolean externalRegistrationEnabled,
+
+        /** Optional OIDC initiate_login_uri; see {@code Application#launchUrl}. */
+        @Size(max = 1000, message = "Sign-in URL cannot exceed 1000 characters")
+        @Pattern(regexp = "^$|^(https?://).+", message = "Sign-in URL must start with http:// or https://")
+        String loginUrl) {
+
+    /** The shape before {@code loginUrl} existed, for callers that do not set one. */
+    public CreateApplicationRequest(
+            String name, String description, String appUrl, String iconUrl, String category, String clientId,
+            ApplicationAccessType accessType, List<UUID> roleIds, Boolean enabled, Integer displayOrder,
+            Boolean externalAuthEnabled, Boolean externalRegistrationEnabled) {
+        this(name, description, appUrl, iconUrl, category, clientId, accessType, roleIds, enabled, displayOrder,
+                externalAuthEnabled, externalRegistrationEnabled, null);
+    }
+}

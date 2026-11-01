@@ -35,14 +35,23 @@ public class DatabaseMigrationService {
 
     private static final Logger log = LoggerFactory.getLogger(DatabaseMigrationService.class);
 
-    private static final List<String> MIGRATION_TABLE_ORDER = List.of(
+    static final List<String> MIGRATION_TABLE_ORDER = List.of(
             "roles",
             "users",
             "user_roles",
             "oauth_clients",
             "signing_keys",
+            // Without it every user is asked to consent to every app again after the move.
+            "oauth2_authorization_consent",
             "applications",
             "application_roles",
+            // After users and applications, which it references. Losing it would erase the record
+            // of who approved whose access, and every request still waiting for review.
+            "access_requests",
+            // Admin-chosen settings, one row each. Left out, the target silently falls back to
+            // the defaults: public sign-up switched off, retention reset.
+            "registration_settings",
+            "analytics_retention_settings",
             "login_events",
             "audit_events",
             "user_recovery_codes",
@@ -61,6 +70,19 @@ public class DatabaseMigrationService {
             "magic_link_tokens",
             // Same reasoning: a reset link emailed just before the move still works after it.
             "password_reset_tokens");
+
+    /**
+     * Tables deliberately left behind. A new table must go in one list or the other —
+     * {@code MigrationTableCoverageTest} fails otherwise, which is the point: the tables missing
+     * from the copy above were all added after it was written, and nobody noticed.
+     */
+    static final Map<String, String> NOT_MIGRATED = Map.of(
+            "spring_session", "sessions: everyone signs in again on the new database",
+            "spring_session_attributes", "belongs to spring_session",
+            "oauth2_authorization", "issued codes and tokens: apps sign the user in again",
+            "app_connect_requests", "short-lived (hours) pending app connections; restart them",
+            "databasechangelog", "Liquibase bookkeeping, recreated on the target",
+            "databasechangeloglock", "Liquibase bookkeeping, recreated on the target");
 
     private final DataSource activeDataSource;
 
@@ -252,6 +274,13 @@ public class DatabaseMigrationService {
             Integer count = targetJdbc.queryForObject(
                     "SELECT COUNT(*) FROM user_roles WHERE user_id = ? AND role_id = ?",
                     Integer.class, row.get("user_id"), row.get("role_id"));
+            return count != null && count > 0;
+        }
+        if ("oauth2_authorization_consent".equalsIgnoreCase(table)
+                && row.containsKey("registered_client_id") && row.containsKey("principal_name")) {
+            Integer count = targetJdbc.queryForObject(
+                    "SELECT COUNT(*) FROM oauth2_authorization_consent WHERE registered_client_id = ? AND principal_name = ?",
+                    Integer.class, row.get("registered_client_id"), row.get("principal_name"));
             return count != null && count > 0;
         }
         if ("application_roles".equalsIgnoreCase(table) && row.containsKey("application_id") && row.containsKey("role_id")) {

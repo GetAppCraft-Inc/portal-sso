@@ -103,6 +103,7 @@ When modifying or adding code, you **MUST** uphold these rules:
 - Keep the distinction clear: an **Application** is a launchpad/catalog entry; an **OAuth Client** is the OIDC relying-party registration. An Application may link to an OAuth Client by `clientId`, but deleting one must not silently delete the other.
 - Prefer simplifying admin workflows in the Applications UI while preserving the lower-level OAuth Clients page for advanced registry management.
 - Apps can onboard themselves through "Connect with Portal SSO" (`connect/`, `docs/APP_CONNECT.md`): manifest → admin approval at `/connect/{id}` → code + verifier redeem. Never weaken the two-proof redeem or the same-origin rules.
+- My Apps tiles open `Application.launchUrl(issuer)`: the app's optional **Sign-in URL** (`login_url`, OIDC initiate_login_uri) with `iss` and `target_link_uri`, else `appUrl`. Build it there, not in the client, and keep the values template-encoded. The SDK side is `handleInitiatedLogin()`; it must ignore any `iss` but its own and follow `target_link_uri` only on the app's origin.
 - External app login/register APIs are protected by per-Application API keys. Keys are generated server-side, shown once, stored hashed, and must be used only from the app backend, never browser JavaScript.
 
 ### 1. Database & Portability
@@ -120,6 +121,12 @@ When modifying or adding code, you **MUST** uphold these rules:
   - `ROLE_ADMIN` and `ROLE_USER` are platform roles and cannot be deleted.
   - An administrator cannot self-demote or disable their own account.
   - The last active administrator on the system can never be disabled or deleted.
+  - **`ROLE_ADMIN` is granted only deliberately** (Users → roles, bootstrap, setup). Approving an access request and registering through an app's external API both filter it out; apps restricted to administrators alone (`Application.isAdminOnly()`) are hidden from ordinary users and cannot be requested.
+  - **Disabling a user takes effect immediately**: their Spring sessions are deleted and `OAuth2GrantRevoker.revokeAllForPrincipal` removes their stored authorizations, so refresh tokens stop working.
+- **Emails are normalized** (trimmed, lower-case) by `User.normalizeEmail`, and `UserRepository.findByEmail` / `existsByEmail` normalize their argument. Never add a lookup that compares raw input.
+- **Every credential check counts toward lockout.** The external app login API publishes the same `AuthenticationFailureBadCredentialsEvent` as the sign-in page, and checks locked/disabled *before* the password so the answer never reveals a correct guess.
+- **`return_url` is never followed blindly**: `ReturnUrlPolicy` allows a local path or the origin of an enabled client's registered redirect URI. The console sends anything else through `/login` for that check.
+- **The DB migration copies every table** in `DatabaseMigrationService.MIGRATION_TABLE_ORDER` or lists it in `NOT_MIGRATED` with a reason; `MigrationTableCoverageTest` fails when a new table is in neither.
 
 ### 3. Audit Trail vs. Sign-in Attempts
 - **Recent Sign-in Attempts (`login_events`)**: Records every authentication attempt (IP, user agent, success/failure, GeoIP). Governed by an automated retention policy (`app.analytics.retention.login-events-hours=48` by default) with an hourly purge job.

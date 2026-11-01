@@ -17,11 +17,18 @@ import com.tanmaysinghx.portalsso.user.entity.Role;
 import com.tanmaysinghx.portalsso.user.entity.User;
 import com.tanmaysinghx.portalsso.user.repository.RoleRepository;
 import com.tanmaysinghx.portalsso.user.repository.UserRepository;
+import com.tanmaysinghx.portalsso.user.service.RoleService;
 import java.util.Comparator;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.function.SingletonSupplier;
 
 @Service
 public class ExternalApplicationAuthService {
@@ -35,6 +42,10 @@ public class ExternalApplicationAuthService {
     private final RegistrationProperties registrationProperties;
     private final PasswordPolicy passwordPolicy;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    /** A real hash to compare against when the address has no account; computed once, on first use. */
+    private final Supplier<String> unknownUserHash;
 
     public ExternalApplicationAuthService(
             ApplicationRepository applicationRepository,
@@ -43,7 +54,8 @@ public class ExternalApplicationAuthService {
             PasswordEncoder passwordEncoder,
             RegistrationProperties registrationProperties,
             PasswordPolicy passwordPolicy,
-            AuditService auditService) {
+            AuditService auditService,
+            ApplicationEventPublisher eventPublisher) {
         this.applicationRepository = applicationRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
@@ -51,6 +63,8 @@ public class ExternalApplicationAuthService {
         this.registrationProperties = registrationProperties;
         this.passwordPolicy = passwordPolicy;
         this.auditService = auditService;
+        this.eventPublisher = eventPublisher;
+        this.unknownUserHash = SingletonSupplier.of(() -> passwordEncoder.encode(UUID.randomUUID().toString()));
     }
 
     @Transactional
@@ -79,8 +93,12 @@ public class ExternalApplicationAuthService {
         user.setEnabled(!registrationProperties.requireAdminApproval());
         user.addRole(defaultRole);
 
+        // Never ROLE_ADMIN: this is a public sign-up form on someone else's site. An app restricted to
+        // administrators with registration on used to make every new registrant a console admin.
         if (app.getRoles() != null) {
-            app.getRoles().forEach(user::addRole);
+            app.getRoles().stream()
+                    .filter(role -> !RoleService.ADMIN_ROLE.equals(role.getName()))
+                    .forEach(user::addRole);
         }
 
         User saved = userRepository.save(user);
@@ -96,22 +114,40 @@ public class ExternalApplicationAuthService {
                 saved.isEnabled() ? userSummary(saved) : null);
     }
 
-    @Transactional
+    /**
+     * Checks a password for an app with its own login form. Held to the same rules as the sign-in
+     * page: failures count toward the lockout (through the same {@code LoginAttemptListener}), and a
+     * locked or disabled account is refused <em>before</em> the password is looked at. Previously a
+     * failure here was never counted — unlimited guessing — and "locked" was only reported for a
+     * correct password, which told a guesser when they had found it.
+     *
+     * <p>{@code noRollbackFor}: the failure is reported by throwing, and the incremented counter
+     * must survive that.
+     */
+    @Transactional(noRollbackFor = BusinessRuleViolationException.class)
     public ExternalAppAuthResponse login(UUID applicationId, String apiKey, ExternalAppLoginRequest request) {
         Application app = requireExternalAuthApp(applicationId, apiKey);
         String email = normalizeEmail(request.email());
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> invalidCredentials(app, email));
-
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null) {
+            // Spend the same time as a real check, so response time does not reveal who has an account.
+            passwordEncoder.matches(request.password(), unknownUserHash.get());
             throw invalidCredentials(app, email);
+        }
+
+        if (user.isAccountLocked()) {
+            throw new BusinessRuleViolationException(ErrorCode.ACCOUNT_LOCKED, "The user account is locked.");
         }
         if (!user.isEnabled()) {
             throw new BusinessRuleViolationException(ErrorCode.ACCOUNT_DISABLED, "The user account is disabled.");
         }
-        if (user.isAccountLocked()) {
-            throw new BusinessRuleViolationException(ErrorCode.ACCOUNT_LOCKED, "The user account is locked.");
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw invalidCredentials(app, email);
         }
+        if (user.getFailedLoginAttempts() != 0) {
+            user.setFailedLoginAttempts(0);
+        }
+        user.setLastLoginAt(java.time.Instant.now());
 
         auditService.record(
                 AuditAction.USER_LOGIN_SUCCESS,
@@ -134,12 +170,11 @@ public class ExternalApplicationAuthService {
         return app;
     }
 
+    /** Published as a normal failed sign-in, so it is audited, recorded and counted toward lockout. */
     private BusinessRuleViolationException invalidCredentials(Application app, String email) {
-        auditService.record(
-                AuditAction.USER_LOGIN_FAILED,
-                (UUID) null,
-                email,
-                "sourceApplication=%s, externalApi=true".formatted(app.getName()));
+        eventPublisher.publishEvent(new AuthenticationFailureBadCredentialsEvent(
+                UsernamePasswordAuthenticationToken.unauthenticated(email, null),
+                new BadCredentialsException("Bad credentials (external API of " + app.getName() + ")")));
         return new BusinessRuleViolationException(ErrorCode.INVALID_CREDENTIALS, "Invalid email or password.");
     }
 

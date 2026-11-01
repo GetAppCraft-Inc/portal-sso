@@ -91,6 +91,11 @@ export class PortalSSO {
       };
 
       const messageHandler = (event: MessageEvent) => {
+        // Only Portal SSO's own callback page may answer. state already defeats a forged message,
+        // but there is no reason to even read one from another origin.
+        if (event.origin !== new URL(this.portalUrl).origin) {
+          return;
+        }
         if (!event.data || event.data.type !== 'PORTAL_SSO_POPUP_CALLBACK') {
           return;
         }
@@ -158,6 +163,43 @@ export class PortalSSO {
   }
 
   /**
+   * Completes "open from Portal SSO" (OIDC third-party initiated login). When a user opens this app
+   * from the Portal SSO launchpad, the page is loaded with `?iss=<portal>&target_link_uri=<page>`.
+   * Call this early on that page: it starts sign-in straight away, and because the user already has
+   * a Portal session they come back signed in without seeing a login form. After
+   * `handleRedirectCallback()` completes, they are sent on to `target_link_uri` (same origin only).
+   *
+   * @param redirectUri the registered redirect URI to come back to. Defaults to this page without its
+   *     query string — the full URL would carry `?iss=…`, which never matches a registered URI.
+   * @returns true when a redirect to Portal SSO was started.
+   */
+  async handleInitiatedLogin(redirectUri?: string): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+
+    const params = new URLSearchParams(window.location.search);
+    const iss = params.get('iss');
+    // Only our own issuer may start a sign-in; any other value is ignored, not followed.
+    if (!iss || iss.replace(/\/$/, '') !== this.portalUrl) return false;
+
+    const target = params.get('target_link_uri');
+    if (target && isSameOrigin(target)) {
+      sessionStorage.setItem('portal_target_link_uri', target);
+    }
+
+    if (await this.getSessionAsync()) {
+      // Already signed in here: go where the launchpad meant to send them.
+      const next = sessionStorage.getItem('portal_target_link_uri');
+      sessionStorage.removeItem('portal_target_link_uri');
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+      if (next) window.location.replace(next);
+      return false;
+    }
+
+    await this.loginWithRedirect(redirectUri || `${window.location.origin}${window.location.pathname}`);
+    return true;
+  }
+
+  /**
    * Processes the authorization code callback from a full-page redirect.
    */
   async handleRedirectCallback(): Promise<PortalSession | null> {
@@ -188,6 +230,13 @@ export class PortalSSO {
 
     const session = await this.exchangeCodeForTokens(code, codeVerifier, redirectUri);
     this.notifyListeners(session.user);
+
+    // Opened from the Portal SSO launchpad (handleInitiatedLogin): continue to the page it asked for.
+    const target = sessionStorage.getItem('portal_target_link_uri');
+    sessionStorage.removeItem('portal_target_link_uri');
+    if (target && isSameOrigin(target)) {
+      window.location.replace(target);
+    }
     return session;
   }
 
@@ -438,5 +487,14 @@ export class PortalSSO {
     this.refreshTimer = setTimeout(() => {
       void this.refreshSession();
     }, delay);
+  }
+}
+
+/** True for an absolute or relative URL on this page's own origin; guards the launchpad's target. */
+function isSameOrigin(url: string): boolean {
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
   }
 }

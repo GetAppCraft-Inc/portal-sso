@@ -1,6 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, HostListener, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { map } from 'rxjs';
 import { SnackbarService } from '../../../../core/services/snackbar.service';
 import { Badge } from '../../../../shared/components/badge/badge';
 import { PortalRole } from '../../models/role.model';
@@ -10,6 +12,15 @@ const INPUT_BASE =
   'block w-full rounded-lg border px-3.5 py-2.5 text-sm text-ink-900 shadow-sm transition-colors placeholder:text-ink-400 focus:outline-none focus:ring-2';
 const INPUT_VALID = 'border-ink-300 focus:border-brand-500 focus:ring-brand-500/25';
 const INPUT_INVALID = 'border-red-400 focus:border-red-400 focus:ring-red-400/25';
+
+/** The server's rule. A name without the prefix would be an authority hasRole() never matches. */
+const ROLE_NAME = /^ROLE_[A-Z0-9_]+$/;
+
+/** "support team" → "ROLE_SUPPORT_TEAM"; "ROLE_x" → "ROLE_X". */
+export function normalizeRoleName(value: string): string {
+  const upper = (value ?? '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  return upper.startsWith('ROLE_') ? upper : `ROLE_${upper}`;
+}
 
 @Component({
   selector: 'app-role-list',
@@ -37,8 +48,15 @@ export class RoleList {
   readonly createForm = this.fb.nonNullable.group({
     // Mirrors the server's rule exactly. A name without the ROLE_ prefix becomes an authority that
     // hasRole() will never match, so the role would be assignable and silently do nothing.
-    name: ['ROLE_', [Validators.required, Validators.pattern(/^ROLE_[A-Z0-9_]+$/)]],
+    // Validated after normalizing, so "support" or "Support Team" are accepted as ROLE_SUPPORT /
+    // ROLE_SUPPORT_TEAM instead of being refused with no request sent.
+    name: ['ROLE_', [Validators.required, (c: AbstractControl) => (ROLE_NAME.test(normalizeRoleName(c.value)) ? null : { pattern: true })]],
     description: [''],
+  });
+
+  /** What will actually be created, shown under the field. */
+  readonly normalizedName = toSignal(this.createForm.controls.name.valueChanges.pipe(map(normalizeRoleName)), {
+    initialValue: 'ROLE_',
   });
 
   constructor() {
@@ -95,7 +113,7 @@ export class RoleList {
     this.createError.set(null);
 
     this.roleService
-      .create({ name: value.name.trim(), description: value.description.trim() || undefined })
+      .create({ name: normalizeRoleName(value.name), description: value.description.trim() || undefined })
       .subscribe({
         next: (role) => {
           this.submitting.set(false);

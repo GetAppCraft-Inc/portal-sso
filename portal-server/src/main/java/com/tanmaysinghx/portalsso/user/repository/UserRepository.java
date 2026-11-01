@@ -18,9 +18,22 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
      * otherwise hit a {@code LazyInitializationException} on {@link User#getRoles()}.
      */
     @EntityGraph(attributePaths = "roles")
-    Optional<User> findByEmail(String email);
+    Optional<User> findOneByEmail(String email);
 
-    boolean existsByEmail(String email);
+    boolean existsOneByEmail(String email);
+
+    /**
+     * Looks an address up the way a person types it. Addresses are stored normalized
+     * ({@link User#normalizeEmail}); before this, sign-in, lockout counting, magic links and
+     * password reset all matched case-sensitively, so {@code Jane@Example.com} was "wrong password".
+     */
+    default Optional<User> findByEmail(String email) {
+        return email == null ? Optional.empty() : findOneByEmail(User.normalizeEmail(email));
+    }
+
+    default boolean existsByEmail(String email) {
+        return email != null && existsOneByEmail(User.normalizeEmail(email));
+    }
 
     /** {@code left join} so users with no roles yet are still listed; {@code distinct} avoids
      * row duplication from the roles join. */

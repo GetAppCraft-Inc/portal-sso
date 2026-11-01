@@ -50,17 +50,7 @@ export class Login {
   constructor() {
     this.authService.loadCurrentUser().subscribe((user) => {
       if (user) {
-        const params = new URLSearchParams(window.location.search);
-        const returnUrl = params.get('return_url') || params.get('returnUrl') || params.get('redirect_uri');
-        if (returnUrl) {
-          window.location.href = returnUrl;
-          return;
-        }
-        if (this.authService.isAdmin()) {
-          this.router.navigateByUrl('/dashboard');
-        } else {
-          this.router.navigateByUrl('/apps');
-        }
+        this.continueAfterSignIn();
       }
     });
 
@@ -87,6 +77,25 @@ export class Login {
     this.passwordResetService.loadPolicy().subscribe({ error: () => {} });
   }
 
+  /**
+   * Where to go once signed in. A `return_url` on this server is followed directly; anything else
+   * goes through the server's `/login`, which follows it only to a registered app's origin. This
+   * used to be `window.location.href = returnUrl` — an open redirect, and a `javascript:` URL ran.
+   */
+  private continueAfterSignIn(): void {
+    const params = new URLSearchParams(window.location.search);
+    const returnUrl = (params.get('return_url') || params.get('returnUrl') || params.get('redirect_uri') || '').trim();
+    if (returnUrl.startsWith('/') && !returnUrl.startsWith('//') && !returnUrl.startsWith('/\\')) {
+      window.location.assign(returnUrl);
+      return;
+    }
+    if (returnUrl) {
+      window.location.assign('/login?return_url=' + encodeURIComponent(returnUrl));
+      return;
+    }
+    this.router.navigateByUrl(this.authService.isAdmin() ? '/dashboard' : '/apps');
+  }
+
   submit(): void {
     this.error.set(null);
     this.successMessage.set(null);
@@ -98,17 +107,7 @@ export class Login {
         if (user.status === 'second-step') {
           window.location.assign(user.path);
         } else if (user.status === 'authenticated') {
-          const params = new URLSearchParams(window.location.search);
-          const returnUrl = params.get('return_url') || params.get('returnUrl') || params.get('redirect_uri');
-          if (returnUrl) {
-            window.location.href = returnUrl;
-            return;
-          }
-          if (this.authService.isAdmin()) {
-            this.router.navigateByUrl('/dashboard');
-          } else {
-            this.router.navigateByUrl('/apps');
-          }
+          this.continueAfterSignIn();
         } else {
           this.error.set('Invalid email or password.');
         }
