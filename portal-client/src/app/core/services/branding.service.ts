@@ -1,3 +1,4 @@
+import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 
@@ -13,6 +14,7 @@ const DEFAULT_FAVICON = 'logo.svg';
 @Injectable({ providedIn: 'root' })
 export class BrandingService {
   private readonly titleService = inject(Title);
+  private readonly http = inject(HttpClient);
 
   readonly companyName = signal<string | null>(null);
   readonly companyLogoUrl = signal<string | null>(null);
@@ -24,6 +26,30 @@ export class BrandingService {
   constructor() {
     this.loadFromStorage();
     this.applyDocumentHeadBranding();
+    if (!this.hasCustomBranding()) {
+      this.loadServerBranding();
+    }
+  }
+
+  /**
+   * The organization named in the setup wizard (or the server's config file), for browsers that
+   * have no branding of their own — so a colleague's first visit to the sign-in page is branded.
+   * Not saved to localStorage: this browser keeps following the server until someone sets its own.
+   */
+  private loadServerBranding(): void {
+    this.http.get<{ productName: string | null; logoUrl: string | null }>('/api/public/branding').subscribe({
+      next: (branding) => {
+        if (this.hasCustomBranding()) {
+          return;
+        }
+        this.companyName.set(branding.productName || null);
+        this.companyLogoUrl.set(branding.logoUrl || null);
+        this.applyDocumentHeadBranding();
+      },
+      error: () => {
+        // Unbranded is a fine fallback.
+      },
+    });
   }
 
   private loadFromStorage(): void {

@@ -1,6 +1,7 @@
 package com.tanmaysinghx.portalsso;
 
 import com.tanmaysinghx.portalsso.bootstrap.AdminBootstrapper;
+import com.tanmaysinghx.portalsso.config.PortalConfigFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -72,6 +73,12 @@ public class PortalSsoAuthServerApplication {
 				System.setProperty("PORTAL_HOME", home);
 				System.setProperty("portal.home", home);
 				normalized.add("--portal.home=" + home);
+			} else if (arg.startsWith("--config=")) {
+				// Consumed here rather than passed to Spring: initPortalDirectories turns it into the
+				// spring.config.import, and the console needs it to know which file to write.
+				System.setProperty(PortalConfigFile.CONFIG_PROPERTY, arg.substring("--config=".length()));
+			} else if (arg.equals("--config") && i + 1 < args.length) {
+				System.setProperty(PortalConfigFile.CONFIG_PROPERTY, args[++i]);
 			} else if (arg.startsWith("--prefix=")) {
 				normalized.add("--server.servlet.context-path=" + arg.substring("--prefix=".length()));
 			} else {
@@ -86,12 +93,25 @@ public class PortalSsoAuthServerApplication {
 			Path home = AdminBootstrapper.resolvePortalHome();
 			Files.createDirectories(home.resolve("data"));
 			Files.createDirectories(home.resolve("secrets"));
-
-			Path propsFile = home.resolve("portal.properties");
-			if (Files.exists(propsFile) && System.getProperty("spring.config.import") == null) {
-				System.setProperty("spring.config.import", "optional:file:" + propsFile.toAbsolutePath());
-			}
 		} catch (IOException ignored) {
+		}
+
+		Path configFile = PortalConfigFile.resolve();
+		if (PortalConfigFile.isExplicit()) {
+			// Named by the operator, so a missing file is a mistake worth failing on rather than
+			// silently starting on the embedded database.
+			setConfigImport("file:" + configFile);
+		} else {
+			PortalConfigFile.writeTemplateIfAbsent(configFile);
+			if (Files.exists(configFile)) {
+				setConfigImport("optional:file:" + configFile);
+			}
+		}
+	}
+
+	private static void setConfigImport(String location) {
+		if (System.getProperty("spring.config.import") == null) {
+			System.setProperty("spring.config.import", location);
 		}
 	}
 
@@ -107,19 +127,7 @@ public class PortalSsoAuthServerApplication {
 			dbUrl = System.getProperty("DB_URL");
 		}
 		if (dbUrl == null || dbUrl.isBlank()) {
-			try {
-				Path propsFile = AdminBootstrapper.resolvePortalHome().resolve("portal.properties");
-				if (Files.exists(propsFile)) {
-					String content = Files.readString(propsFile);
-					for (String line : content.split("\n")) {
-						if (line.trim().startsWith("spring.datasource.url=")) {
-							dbUrl = line.trim().substring("spring.datasource.url=".length()).trim();
-							break;
-						}
-					}
-				}
-			} catch (Exception ignored) {
-			}
+			dbUrl = PortalConfigFile.read(PortalConfigFile.resolve()).get("spring.datasource.url");
 		}
 
 		if (dbUrl != null && (dbUrl.toLowerCase(java.util.Locale.ROOT).contains(":mysql:") || dbUrl.toLowerCase(java.util.Locale.ROOT).contains(":mariadb:"))) {

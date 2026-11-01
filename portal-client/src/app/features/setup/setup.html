@@ -1,0 +1,370 @@
+<div
+  class="min-h-screen transition-colors duration-200"
+  [class]="themeService.isDark() ? 'bg-ink-950 text-white' : 'bg-slate-50 text-slate-950'"
+>
+  <header class="flex h-16 items-center justify-between px-5 sm:px-8">
+    <div class="flex items-center gap-3">
+      <img src="logo.svg" alt="" class="h-9 w-9 rounded-xl" />
+      <div>
+        <p class="text-sm font-semibold" [class]="headingClass()">Portal SSO</p>
+        <p class="text-xs" [class]="mutedClass()">First-run setup</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      (click)="themeService.toggleTheme()"
+      [attr.aria-label]="themeService.isDark() ? 'Switch to light mode' : 'Switch to dark mode'"
+      class="flex h-9 w-9 items-center justify-center rounded-lg border transition"
+      [class]="themeService.isDark()
+        ? 'border-ink-800 bg-ink-900 text-ink-300 hover:border-ink-700 hover:text-white'
+        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950'"
+    >
+      @if (themeService.isDark()) {
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path stroke-linecap="round" d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+      } @else {
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+        </svg>
+      }
+    </button>
+  </header>
+
+  <main class="mx-auto w-full max-w-2xl px-5 pb-16 pt-4 sm:px-8">
+    <!-- Progress -->
+    <ol class="mb-8 grid grid-cols-4 gap-2" aria-label="Setup progress">
+      @for (s of steps; track s.id; let i = $index) {
+        <li class="min-w-0" [attr.aria-current]="s.id === step() ? 'step' : null">
+          <div
+            class="h-1 rounded-full"
+            [class]="i <= stepIndex() ? 'bg-brand-500' : (themeService.isDark() ? 'bg-ink-800' : 'bg-slate-200')"
+          ></div>
+          <p
+            class="mt-2 truncate text-xs font-medium"
+            [class]="i === stepIndex() ? headingClass() : (themeService.isDark() ? 'text-ink-500' : 'text-slate-500')"
+          >
+            <span class="sr-only">Step {{ i + 1 }}: </span>{{ s.label }}
+            @if (i < stepIndex()) {
+              <span class="sr-only">(done)</span>
+            }
+          </p>
+        </li>
+      }
+    </ol>
+
+    @if (error()) {
+      <div
+        class="mb-5 flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-sm"
+        [class]="themeService.isDark() ? 'border-red-500/25 bg-red-500/10 text-red-300' : 'border-red-200 bg-red-50 text-red-700'"
+        role="alert"
+      >
+        <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+        </svg>
+        <span>{{ error() }}</span>
+      </div>
+    }
+
+    @if (loading()) {
+      <p class="text-sm" [class]="mutedClass()" role="status">Checking this server…</p>
+    } @else if (!setupKeyIssued()) {
+      <div [class]="cardClass()" role="status">
+        <h1 class="text-lg font-semibold" [class]="headingClass()">Setup is locked on this server</h1>
+        <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+          No administrator exists and setup-key generation is turned off. Add these to
+          <code class="break-all font-mono text-xs">{{ configFile() || 'portal.properties' }}</code>
+          (or set them as environment variables) and restart the server:
+        </p>
+        <pre class="mt-3 overflow-x-auto rounded-lg p-3 font-mono text-xs" [class]="themeService.isDark() ? 'bg-ink-950 text-ink-200' : 'bg-slate-100 text-slate-800'">app.bootstrap.admin-email=you&#64;company.com
+app.bootstrap.admin-password=…</pre>
+        <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+          Or set <code class="font-mono text-xs">app.bootstrap.auto-generate=true</code> to use this wizard instead.
+        </p>
+      </div>
+    } @else {
+      @switch (step()) {
+        <!-- 1. Organization -->
+        @case ('organization') {
+          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Welcome to Portal SSO</h1>
+          <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+            Four short steps and your single sign-on is running. First, who is this for? Your users see this name
+            and logo on the sign-in page and in every email. All of it can be changed later.
+          </p>
+
+          <form class="mt-6" [class]="cardClass()" (ngSubmit)="continueFromOrganization()">
+            <div class="space-y-4">
+              <div>
+                <label for="org-name" [class]="labelClass()">Organization name</label>
+                <input id="org-name" name="organizationName" type="text" maxlength="100" autocomplete="organization"
+                  [ngModel]="organizationName()" (ngModelChange)="organizationName.set($event)"
+                  placeholder="Acme Corp" [class]="inputClass()" />
+              </div>
+              <div>
+                <label for="org-logo" [class]="labelClass()">Logo URL <span class="font-normal opacity-70">(optional)</span></label>
+                <input id="org-logo" name="logoUrl" type="url" maxlength="1000" aria-describedby="org-logo-hint"
+                  [ngModel]="logoUrl()" (ngModelChange)="setLogoUrl($event)"
+                  placeholder="https://www.acme.com/logo.png" [class]="inputClass()" />
+                <p id="org-logo-hint" [class]="hintClass()">A full https:// address. Email clients load it themselves, so it must be public.</p>
+              </div>
+              <div>
+                <label for="org-support" [class]="labelClass()">Help / support link <span class="font-normal opacity-70">(optional)</span></label>
+                <input id="org-support" name="supportUrl" type="url" maxlength="1000"
+                  [ngModel]="supportUrl()" (ngModelChange)="supportUrl.set($event)"
+                  placeholder="https://support.acme.com" [class]="inputClass()" />
+              </div>
+            </div>
+
+            <!-- What users will see -->
+            <div class="mt-6 rounded-lg border p-4" [class]="themeService.isDark() ? 'border-ink-800 bg-ink-950/40' : 'border-slate-200 bg-slate-50'">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.14em]" [class]="themeService.isDark() ? 'text-ink-500' : 'text-slate-500'">Sign-in page preview</p>
+              <div class="mt-3 flex items-center gap-3">
+                @if (logoUrl().trim() && !logoBroken()) {
+                  <img [src]="logoUrl().trim()" alt="" class="h-9 max-w-[8rem] object-contain" (error)="logoBroken.set(true)" />
+                } @else {
+                  <img src="logo.svg" alt="" class="h-9 w-9 rounded-xl" />
+                }
+                <p class="text-base font-semibold" [class]="headingClass()">Sign in to {{ organizationName().trim() || 'Portal SSO' }}</p>
+              </div>
+              @if (logoBroken()) {
+                <p class="mt-2 text-xs" [class]="themeService.isDark() ? 'text-amber-300' : 'text-amber-700'">That logo could not be loaded from this browser. Check the address.</p>
+              }
+            </div>
+
+            <div class="mt-6 flex justify-end">
+              <button type="submit" [class]="primaryButtonClass">Continue</button>
+            </div>
+          </form>
+        }
+
+        <!-- 2. Administrator -->
+        @case ('administrator') {
+          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Create the first administrator</h1>
+          <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+            Unlock this server with the one-time setup key, then create your own administrator account. You can add
+            more administrators later.
+          </p>
+
+          <form class="mt-6" [class]="cardClass()" (ngSubmit)="createAdministrator()">
+            <div class="space-y-4">
+              <div>
+                <label for="setup-key" [class]="labelClass()">Setup key</label>
+                <input id="setup-key" type="password" name="setupKey" autocomplete="off" spellcheck="false" required
+                  aria-describedby="setup-key-hint" [ngModel]="setupKey()" (ngModelChange)="setupKey.set($event)"
+                  placeholder="Paste the key printed at startup" [class]="inputClass() + ' font-mono'" />
+                <p id="setup-key-hint" [class]="hintClass()">
+                  Printed in the server log at startup and saved to
+                  <code class="break-all font-mono">{{ setupKeyFile() || 'secrets/initialAdminPassword' }}</code>
+                </p>
+              </div>
+
+              <div>
+                <label for="setup-email" [class]="labelClass()">Administrator email</label>
+                <input id="setup-email" type="email" name="email" autocomplete="email" required
+                  [ngModel]="email()" (ngModelChange)="email.set($event)" placeholder="admin@company.com" [class]="inputClass()" />
+              </div>
+
+              <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label for="setup-first-name" [class]="labelClass()">First name</label>
+                  <input id="setup-first-name" type="text" name="firstName" autocomplete="given-name"
+                    [ngModel]="firstName()" (ngModelChange)="firstName.set($event)" placeholder="First" [class]="inputClass()" />
+                </div>
+                <div>
+                  <label for="setup-last-name" [class]="labelClass()">Last name</label>
+                  <input id="setup-last-name" type="text" name="lastName" autocomplete="family-name"
+                    [ngModel]="lastName()" (ngModelChange)="lastName.set($event)" placeholder="Last" [class]="inputClass()" />
+                </div>
+              </div>
+
+              <div>
+                <label for="setup-password" [class]="labelClass()">Password</label>
+                <input id="setup-password" type="password" name="password" autocomplete="new-password" required
+                  aria-describedby="setup-password-rules" [ngModel]="password()" (ngModelChange)="password.set($event)"
+                  placeholder="Create a strong password" [class]="inputClass()" />
+                <ul id="setup-password-rules" class="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  @for (rule of checklist(); track rule.label) {
+                    <li class="flex items-center gap-2 text-xs"
+                      [class]="rule.met ? (themeService.isDark() ? 'text-emerald-400' : 'text-emerald-700') : (themeService.isDark() ? 'text-ink-500' : 'text-slate-500')">
+                      @if (rule.met) {
+                        <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      } @else {
+                        <span class="flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden="true"><span class="h-1.5 w-1.5 rounded-full bg-current"></span></span>
+                      }
+                      <span>{{ rule.label }}</span>
+                      <span class="sr-only">{{ rule.met ? '(met)' : '(not met)' }}</span>
+                    </li>
+                  }
+                </ul>
+              </div>
+
+              <div>
+                <label for="setup-confirm-password" [class]="labelClass()">Confirm password</label>
+                <input id="setup-confirm-password" type="password" name="confirmPassword" autocomplete="new-password" required
+                  [ngModel]="confirmPassword()" (ngModelChange)="confirmPassword.set($event)" placeholder="Repeat password" [class]="inputClass()" />
+              </div>
+            </div>
+
+            <div class="mt-6 flex items-center justify-between gap-3">
+              <button type="button" (click)="goTo('organization')" [disabled]="submitting()" [class]="secondaryButtonClass()">Back</button>
+              <button type="submit" [disabled]="submitting()" [class]="primaryButtonClass">
+                @if (submitting()) {
+                  <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                }
+                {{ submitting() ? 'Creating administrator…' : 'Create administrator' }}
+              </button>
+            </div>
+          </form>
+        }
+
+        <!-- 3. Database -->
+        @case ('database') {
+          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Choose where data is stored</h1>
+
+          @if (!isEmbeddedDatabase()) {
+            <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+              This server is already connected to <span class="font-medium" [class]="headingClass()">{{ databaseProduct() }}</span>,
+              from your configuration file or environment. Nothing to do here.
+            </p>
+            <div class="mt-6 flex justify-end">
+              <button type="button" (click)="goTo('finish')" [class]="primaryButtonClass">Continue</button>
+            </div>
+          } @else if (restartCountdown() !== null) {
+            <div class="mt-6" [class]="cardClass()" role="status">
+              <p class="font-medium" [class]="headingClass()">Switching database and restarting…</p>
+              <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+                Your administrator account and settings were copied across and the connection was saved to
+                <code class="break-all font-mono text-xs">{{ configFile() }}</code>. Sign in again when the page reloads
+                (in {{ restartCountdown() }}s).
+              </p>
+            </div>
+          } @else {
+            <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+              Portal SSO is running on its built-in database. That is fine to start with; for production, connect
+              PostgreSQL or MySQL now — everything created so far moves across. You can also do this later under
+              Settings → Database.
+            </p>
+
+            <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Database">
+              <button type="button" role="radio" [attr.aria-checked]="dbChoice() === 'EMBEDDED'" (click)="chooseDatabase('EMBEDDED')" [class]="choiceClass(dbChoice() === 'EMBEDDED')">
+                <span class="text-sm font-semibold" [class]="headingClass()">Built-in (H2)</span>
+                <span class="mt-1 text-xs leading-5" [class]="mutedClass()">No setup. For trials and small teams.</span>
+              </button>
+              <button type="button" role="radio" [attr.aria-checked]="dbChoice() === 'POSTGRESQL'" (click)="chooseDatabase('POSTGRESQL')" [class]="choiceClass(dbChoice() === 'POSTGRESQL')">
+                <span class="text-sm font-semibold" [class]="headingClass()">PostgreSQL</span>
+                <span class="mt-1 text-xs leading-5" [class]="mutedClass()">Recommended for production. 15+.</span>
+              </button>
+              <button type="button" role="radio" [attr.aria-checked]="dbChoice() === 'MYSQL'" (click)="chooseDatabase('MYSQL')" [class]="choiceClass(dbChoice() === 'MYSQL')">
+                <span class="text-sm font-semibold" [class]="headingClass()">MySQL / MariaDB</span>
+                <span class="mt-1 text-xs leading-5" [class]="mutedClass()">MySQL 8.0+.</span>
+              </button>
+            </div>
+
+            @if (dbChoice() === 'EMBEDDED') {
+              <div class="mt-6 flex items-center justify-between gap-3">
+                <p class="text-xs" [class]="mutedClass()">Data is kept in the server's home folder.</p>
+                <button type="button" (click)="goTo('finish')" [class]="primaryButtonClass">Continue with built-in</button>
+              </div>
+            } @else {
+              <form class="mt-6" [class]="cardClass()" (ngSubmit)="switchDatabase()">
+                <p class="text-xs leading-5" [class]="mutedClass()">
+                  Create an empty database and a user that owns it first; Portal SSO creates its own tables.
+                </p>
+                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div class="sm:col-span-2">
+                    <label for="db-host" [class]="labelClass()">Host</label>
+                    <input id="db-host" name="host" type="text" required [ngModel]="dbHost()" (ngModelChange)="dbHost.set($event); testResult.set(null)" [class]="inputClass()" />
+                  </div>
+                  <div>
+                    <label for="db-port" [class]="labelClass()">Port</label>
+                    <input id="db-port" name="port" type="number" required [ngModel]="dbPort()" (ngModelChange)="dbPort.set($event); testResult.set(null)" [class]="inputClass()" />
+                  </div>
+                  <div class="sm:col-span-3">
+                    <label for="db-name" [class]="labelClass()">Database name</label>
+                    <input id="db-name" name="databaseName" type="text" required [ngModel]="dbName()" (ngModelChange)="dbName.set($event); testResult.set(null)" [class]="inputClass()" />
+                  </div>
+                  <div class="sm:col-span-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label for="db-user" [class]="labelClass()">Username</label>
+                      <input id="db-user" name="username" type="text" autocomplete="off" required [ngModel]="dbUsername()" (ngModelChange)="dbUsername.set($event); testResult.set(null)" [class]="inputClass()" />
+                    </div>
+                    <div>
+                      <label for="db-password" [class]="labelClass()">Password</label>
+                      <input id="db-password" name="dbPassword" type="password" autocomplete="new-password" [ngModel]="dbPassword()" (ngModelChange)="dbPassword.set($event); testResult.set(null)" [class]="inputClass()" />
+                    </div>
+                  </div>
+                </div>
+
+                @if (testResult(); as result) {
+                  <p class="mt-4 rounded-lg border px-3 py-2 text-xs leading-5" role="status"
+                    [class]="result.success
+                      ? (themeService.isDark() ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-800')
+                      : (themeService.isDark() ? 'border-red-500/25 bg-red-500/10 text-red-300' : 'border-red-200 bg-red-50 text-red-700')">
+                    {{ result.message }}
+                  </p>
+                }
+
+                <details class="mt-4 text-xs" [class]="mutedClass()">
+                  <summary class="cursor-pointer select-none">Prefer a config file? Add this instead and restart</summary>
+                  <pre class="mt-2 overflow-x-auto rounded-lg p-3 font-mono" [class]="themeService.isDark() ? 'bg-ink-950 text-ink-200' : 'bg-slate-100 text-slate-800'">{{ configSnippet() }}</pre>
+                  <p class="mt-1">File: <code class="break-all font-mono">{{ configFile() || 'portal.properties' }}</code></p>
+                </details>
+
+                <div class="mt-6 flex flex-wrap items-center justify-end gap-3">
+                  <button type="button" (click)="testConnection()" [disabled]="testing() || switching()" [class]="secondaryButtonClass()">
+                    {{ testing() ? 'Testing…' : 'Test connection' }}
+                  </button>
+                  <button type="submit" [disabled]="!testResult()?.success || switching()" [class]="primaryButtonClass"
+                    [title]="testResult()?.success ? '' : 'Test the connection first'">
+                    {{ switching() ? 'Moving data…' : 'Switch database & restart' }}
+                  </button>
+                </div>
+              </form>
+            }
+          }
+        }
+
+        <!-- 4. Get started -->
+        @case ('finish') {
+          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">
+            {{ organizationName().trim() || 'Portal SSO' }} is ready
+          </h1>
+          <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+            You're signed in as administrator. Here's how most teams get from here to their first single sign-on.
+          </p>
+
+          <ol class="mt-6 space-y-3">
+            @for (item of nextSteps; track item.n) {
+              <li class="flex items-start gap-4" [class]="cardClass()">
+                <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                  [class]="themeService.isDark() ? 'bg-ink-800 text-ink-200' : 'bg-slate-100 text-slate-700'">{{ item.n }}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold" [class]="headingClass()">{{ item.title }}</p>
+                  <p class="mt-1 text-xs leading-5" [class]="mutedClass()">{{ item.body }}</p>
+                  <a [routerLink]="item.link" class="mt-2 inline-block text-xs font-medium text-brand-600 hover:text-brand-700">{{ item.cta }} →</a>
+                </div>
+              </li>
+            }
+          </ol>
+
+          @if (configFile()) {
+            <p class="mt-6 text-xs leading-5" [class]="mutedClass()">
+              Server settings that live outside the console — public URL, database, organization — are in
+              <code class="break-all font-mono">{{ configFile() }}</code>. Every option is listed there, commented out.
+            </p>
+          }
+
+          <div class="mt-6 flex justify-end">
+            <button type="button" (click)="finish()" [class]="primaryButtonClass">Go to dashboard</button>
+          </div>
+        }
+      }
+    }
+  </main>
+</div>

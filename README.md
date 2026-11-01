@@ -43,13 +43,17 @@ java -jar portal-sso.jar --httpPort=8080
 On first start Portal SSO creates `~/.portal-sso/` (embedded H2 database, generated MFA key) and
 prints a one-time **setup key** (also saved to `~/.portal-sso/secrets/initialAdminPassword`).
 
-Open `http://localhost:8080`, paste the key, and create your own administrator account. You are
-signed straight in, and the key is spent. Other flags: `--httpListenAddress`, `--portalHome`, `--prefix`.
-Linux installer and systemd unit: [docs/download.md](docs/download.md).
+Open `http://localhost:8080` and the setup wizard walks you through four steps: **organization**
+(name, logo, support link), **administrator** (paste the key), **database** (keep the built-in H2, or
+connect PostgreSQL / MySQL — data is copied and the server restarts onto it), and **get started**.
 
-When you outgrow H2, go to **Settings → Database & Migration**, enter PostgreSQL or MySQL connection
-details, **Test**, then **Migrate**. Schema, users, clients, signing keys and audit history are
-copied, and the new connection is saved to `~/.portal-sso/portal.properties`.
+Prefer files? First start also writes `~/.portal-sso/portal.properties` with every option listed and
+commented out — database, public URL, organization, first administrator. Uncomment, restart. Point at
+another file with `--config=/etc/portal-sso/portal.properties`. Other flags: `--httpListenAddress`,
+`--portalHome`, `--prefix`. Linux installer and systemd unit: [docs/download.md](docs/download.md).
+Details: [docs/deployment.md](docs/deployment.md#3-first-run-setup).
+
+Outgrow H2 later? **Settings → Database** does the same migration as the wizard's database step.
 
 ### Option 2 — Docker Compose (PostgreSQL included)
 

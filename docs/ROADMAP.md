@@ -10,7 +10,7 @@ and is out of date; this file is the one to trust and to update.
   no plaintext secrets, audit records field names but never values, mail through `MailService`.
 - Size: **S** ≈ a session, **M** ≈ a few sessions, **L** = needs a design note first.
 
-_Last reviewed: 2026-10-19 (against `main` @ `b47ba01` + forgot-password / expiry work)_
+_Last reviewed: 2026-11-01 (guided setup + config file; H2 restart fix)_
 
 ---
 
@@ -65,6 +65,9 @@ _Last reviewed: 2026-10-19 (against `main` @ `b47ba01` + forgot-password / expir
 ### Operations
 - Single JAR with embedded Angular SPA; Docker image + Compose; `install.sh`
 - Zero-config H2 boot and first-run setup wizard: a one-time setup key (printed + `secrets/initialAdminPassword`) unlocks the wizard, the operator creates their own admin and is signed straight in; no `admin@localhost` account, no unauthenticated admin creation, existing accounts never adopted
+- **Guided setup at `/setup`**: Organization (name, logo, support link — saved server-side, so every browser's sign-in page is branded via `GET /api/public/branding`) → Administrator (setup key) → Database (keep H2, or PostgreSQL/MySQL: test, copy, save, restart) → Get started
+- **Config-file setup**: first boot writes a fully commented `<portalHome>/portal.properties` listing every option; `--config=<file>` / `PORTAL_CONFIG` points elsewhere; `app.organization.*` fills in branding the console has not set; console writes merge into the file instead of overwriting it
+- Embedded H2 now survives restarts (dropped `DATABASE_TO_LOWER`, which made Liquibase re-create `databasechangelog` on every start after the first)
 - Browser end-to-end test of first-run setup (Playwright, `e2e/`) runs the packaged JAR in CI and gates releases
 - In-app H2 → PostgreSQL/MySQL migration wizard with restart
 - Light/dark theme, console branding, product / docs / download pages
@@ -85,7 +88,6 @@ _(nothing yet)_
 
 | # | Feature | Size | Notes |
 |---|---|---|---|
-| 0 | **🐞 Embedded H2 fails on second start** | S–M | Pre-existing on `main` (reproduced on `b47ba01`): a fresh `~/.portal-sso` boots, every later boot dies in Liquibase with `Table "databasechangelog" already exists`. Liquibase 5.0.3 + H2 2.4.240 + `DATABASE_TO_LOWER=TRUE`; lower-case table names, `default-schema=public` and `preserveSchemaCase` did not fix it. Fix first — it breaks the "just run the JAR" promise. |
 | 3 | **Email verification + admin invitations** | M | Verify the address on self-sign-up; admin "Invite user" sends a set-password link instead of an admin choosing a password. Adds `email_verified` claim. |
 | 4 | **Signing-key rotation & retirement** | M | Admin "Rotate now" + optional scheduled rotation; old keys stay in JWKS for a grace period, then retire. Today keys are only generated on first boot. |
 | 5 | **OIDC logout, done properly** | S–M | Confirm RP-initiated logout (`end_session_endpoint`) works with stored `post_logout_redirect_uris`, add them to onboarding UI/snippets, then add back-channel logout to notify apps. |

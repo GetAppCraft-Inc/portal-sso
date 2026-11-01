@@ -1,14 +1,18 @@
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The first five minutes of every installation: open the console, unlock it with the setup key
- * from the server, create an administrator, land in the dashboard, and sign in again later.
+ * The first five minutes of every installation: open the console, name the organization, unlock
+ * the wizard with the setup key from the server, create an administrator, choose a database, land
+ * in the dashboard — and later, sign in again from a browser that has never seen the wizard.
  * If this breaks, nobody can start using the product at all.
  */
 
-const keyFile = join(process.env.E2E_PORTAL_HOME!, 'secrets', 'initialAdminPassword');
+const home = process.env.E2E_PORTAL_HOME!;
+const keyFile = join(home, 'secrets', 'initialAdminPassword');
+const configFile = join(home, 'portal.properties');
+const ORGANIZATION = 'Acme Corp';
 const ADMIN = {
   email: 'owner@example.com',
   firstName: 'Ada',
@@ -18,23 +22,45 @@ const ADMIN = {
 
 test.describe.configure({ mode: 'serial' });
 
-test('a fresh install shows the setup wizard, not a sign-in form', async ({ page, request }) => {
+async function throughOrganizationStep(page: Page) {
+  await page.goto('/setup');
+  await page.getByLabel('Organization name').fill(ORGANIZATION);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Create the first administrator' })).toBeVisible();
+}
+
+test('a fresh install opens the setup wizard, not a sign-in form', async ({ page, request }) => {
   const status = await (await request.get('/api/public/setup/status')).json();
   expect(status.setupRequired).toBe(true);
   expect(status.setupKeyIssued).toBe(true);
   expect(existsSync(keyFile)).toBe(true);
 
+  // Every option is written out, commented, for operators who prefer files to the wizard.
+  expect(status.configFile).toBe(configFile);
+  expect(readFileSync(configFile, 'utf8')).toContain('# spring.datasource.url=jdbc:postgresql://');
+
   // What an operator types after starting the server: the bare address.
   await page.goto('/');
-  await expect(page).toHaveURL(/\/sign-in/);
-  await expect(page.getByRole('heading', { name: 'Create the first administrator' })).toBeVisible();
-  await expect(page.getByLabel('Setup key')).toBeVisible();
-  // The operator is told where the key is, so they do not have to go hunting through logs.
-  await expect(page.getByText('initialAdminPassword')).toBeVisible();
+  await expect(page).toHaveURL(/\/setup/);
+  await expect(page.getByRole('heading', { name: 'Welcome to Portal SSO' })).toBeVisible();
+
+  // The organization step previews what users will see.
+  await page.getByLabel('Organization name').fill(ORGANIZATION);
+  await expect(page.getByText(`Sign in to ${ORGANIZATION}`)).toBeVisible();
+});
+
+test('a logo that is not a web address is caught before the key is needed', async ({ page }) => {
+  await page.goto('/setup');
+  await page.getByLabel(/Logo URL/).fill('logo.png');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('alert')).toContainText('Logo URL must be a full http:// or https:// address');
 });
 
 test('the password checklist updates as the operator types', async ({ page }) => {
-  await page.goto('/sign-in');
+  await throughOrganizationStep(page);
+  // The operator is told where the key is, so they do not have to go hunting through logs.
+  await expect(page.getByText('initialAdminPassword')).toBeVisible();
+
   const rules = page.locator('#setup-password-rules');
   await page.getByLabel('Password', { exact: true }).fill('short');
   await expect(rules.getByText('At least 12 characters')).toBeVisible();
@@ -45,37 +71,50 @@ test('the password checklist updates as the operator types', async ({ page }) =>
 });
 
 test('a wrong setup key is refused and nothing is created', async ({ page, request }) => {
-  await page.goto('/sign-in');
+  await throughOrganizationStep(page);
   await page.getByLabel('Setup key').fill('definitely-not-the-key');
   await page.getByLabel('Administrator email').fill(ADMIN.email);
   await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
   await page.getByLabel('Confirm password').fill(ADMIN.password);
-  await page.getByRole('button', { name: 'Complete setup' }).click();
+  await page.getByRole('button', { name: 'Create administrator' }).click();
 
   await expect(page.getByText('The setup key is incorrect.')).toBeVisible();
   const status = await (await request.get('/api/public/setup/status')).json();
   expect(status.setupRequired).toBe(true);
 });
 
-test('the right setup key creates the administrator and signs them in', async ({ page, request }) => {
+test('the right setup key creates the administrator, then database and next steps follow', async ({ page, request }) => {
   const setupKey = readFileSync(keyFile, 'utf8').trim();
 
-  await page.goto('/sign-in');
+  await throughOrganizationStep(page);
   await page.getByLabel('Setup key').fill(setupKey);
   await page.getByLabel('Administrator email').fill(ADMIN.email);
   await page.getByLabel('First name').fill(ADMIN.firstName);
   await page.getByLabel('Last name').fill(ADMIN.lastName);
   await page.getByLabel('Password', { exact: true }).fill(ADMIN.password);
   await page.getByLabel('Confirm password').fill(ADMIN.password);
-  await page.getByRole('button', { name: 'Complete setup' }).click();
+  await page.getByRole('button', { name: 'Create administrator' }).click();
 
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
+  // Signed in by now: the database step uses the administrator's own session.
+  await expect(page.getByRole('heading', { name: 'Choose where data is stored' })).toBeVisible({ timeout: 20_000 });
 
   // The key is single use: it is spent and its file removed.
   expect(existsSync(keyFile)).toBe(false);
   const status = await (await request.get('/api/public/setup/status')).json();
   expect(status.setupRequired).toBe(false);
   expect(status.setupKeyFile ?? null).toBeNull();
+
+  // Choosing PostgreSQL shows the connection form; switching waits for a successful test.
+  await page.getByRole('radio', { name: /PostgreSQL/ }).click();
+  await expect(page.getByLabel('Host')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Switch database & restart' })).toBeDisabled();
+
+  await page.getByRole('radio', { name: /Built-in/ }).click();
+  await page.getByRole('button', { name: 'Continue with built-in' }).click();
+
+  await expect(page.getByRole('heading', { name: `${ORGANIZATION} is ready` })).toBeVisible();
+  await page.getByRole('button', { name: 'Go to dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
 });
 
 test('setup cannot be run a second time', async ({ request }) => {
@@ -86,12 +125,16 @@ test('setup cannot be run a second time', async ({ request }) => {
   expect(response.ok()).toBe(false);
 });
 
-test('the new administrator can sign in again from a clean browser', async ({ browser }) => {
+test('a clean browser sees the organization and can sign in', async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  await page.goto('/sign-in');
-  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  // The wizard is closed for good.
+  await page.goto('/setup');
+  await expect(page).toHaveURL(/\/sign-in/);
+
+  // Branding comes from the server, not from the browser that ran the wizard.
+  await expect(page.getByRole('heading', { name: `Sign in to ${ORGANIZATION}`, exact: true })).toBeVisible();
   await expect(page.getByLabel('Setup key')).toHaveCount(0);
 
   await page.getByLabel('Email address').fill(ADMIN.email);

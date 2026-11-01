@@ -6,6 +6,7 @@ import com.tanmaysinghx.portalsso.common.error.BusinessRuleViolationException;
 import com.tanmaysinghx.portalsso.common.error.ErrorCode;
 import com.tanmaysinghx.portalsso.common.error.PortalException;
 import com.tanmaysinghx.portalsso.common.error.ResourceConflictException;
+import com.tanmaysinghx.portalsso.mail.service.EmailSettingsService;
 import com.tanmaysinghx.portalsso.security.password.PasswordPolicy;
 import com.tanmaysinghx.portalsso.security.password.PasswordPolicy.PasswordPolicyDescription;
 import com.tanmaysinghx.portalsso.user.entity.Role;
@@ -36,18 +37,21 @@ public class InitialAdminService {
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicy passwordPolicy;
     private final AuditService auditService;
+    private final EmailSettingsService emailSettingsService;
 
     public InitialAdminService(
             UserRepository userRepository,
             RoleRepository roleRepository,
             PasswordEncoder passwordEncoder,
             PasswordPolicy passwordPolicy,
-            AuditService auditService) {
+            AuditService auditService,
+            EmailSettingsService emailSettingsService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
         this.auditService = auditService;
+        this.emailSettingsService = emailSettingsService;
     }
 
     public boolean isSetupRequired() {
@@ -69,7 +73,7 @@ public class InitialAdminService {
     }
 
     /** Checks everything that can be checked without spending the setup key. */
-    public void validate(String email, String password) {
+    public void validate(String email, String password, Organization organization) {
         if (!isSetupRequired()) {
             throw new PortalException(ErrorCode.SETUP_ALREADY_COMPLETED);
         }
@@ -81,6 +85,11 @@ public class InitialAdminService {
             throw new BusinessRuleViolationException(
                     ErrorCode.WEAK_PASSWORD, "Password " + String.join("; ", failures) + ".");
         }
+        List<String> organizationProblems = organization.problems();
+        if (!organizationProblems.isEmpty()) {
+            throw new BusinessRuleViolationException(
+                    ErrorCode.VALIDATION_FAILED, String.join(" ", organizationProblems));
+        }
         // Never adopt an existing account: setting its password from an unauthenticated page would
         // be a takeover of whoever owns it. Recovering a disabled admin is what app.bootstrap.* is for.
         if (userRepository.findByEmail(normalize(email)).isPresent()) {
@@ -91,8 +100,9 @@ public class InitialAdminService {
     }
 
     @Transactional
-    public User createAdmin(String email, String password, String firstName, String lastName) {
-        validate(email, password);
+    public User createAdmin(
+            String email, String password, String firstName, String lastName, Organization organization) {
+        validate(email, password, organization);
 
         Role adminRole = roleRepository.findByName(RoleService.ADMIN_ROLE)
                 .orElseThrow(() -> new IllegalStateException(
@@ -112,6 +122,10 @@ public class InitialAdminService {
         User saved = userRepository.save(user);
         auditService.recordSystemAction(
                 AuditAction.ADMIN_BOOTSTRAPPED, saved.getId(), saved.getEmail(), "setupWizard=true");
+        // Same transaction as the account: a wizard that half-finished would leave the operator
+        // signed in to an unbranded server, wondering whether to run it again (it cannot be).
+        emailSettingsService.applyOrganization(
+                organization.name(), organization.logoUrl(), organization.supportUrl(), false, "setup wizard");
         log.info("Initial administrator '{}' created via the setup wizard.", saved.getEmail());
         return saved;
     }

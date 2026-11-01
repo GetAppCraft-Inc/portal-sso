@@ -120,6 +120,7 @@ You can configure runtime options directly via Jenkins-style command-line argume
 | `--httpListenAddress` | `--httpListenAddress=0.0.0.0` | Bind IP address. |
 | `--portalHome` | `--portalHome=/var/lib/portal-sso` | Directory where database, keys, and `portal.properties` reside. |
 | `--prefix` | `--prefix=/auth` | Servlet context path prefix when reverse-proxying behind a subpath. |
+| `--config` | `--config=/etc/portal-sso/portal.properties` | Configuration file to read instead of `<portalHome>/portal.properties` (also `PORTAL_CONFIG`). Must exist. |
 
 Example running on port 8090 in custom directory:
 ```bash
@@ -169,17 +170,59 @@ sudo systemctl enable --now portal-sso
 
 ---
 
-## 3. First-Run Web Setup Wizard
+## 3. First-Run Setup
 
-When Portal SSO boots for the first time on a new database:
-1. Open `http://your-server-ip:8080` in your web browser.
-2. The page automatically displays the **First-Run Setup Wizard**.
-3. Fill in:
-   - **Administrator Email** (e.g. `admin@company.com`)
-   - **First & Last Name**
-   - **Password** (minimum 12 characters, complying with enterprise password policy)
-4. Click **"Complete Setup & Sign In"**.
-5. You are immediately authenticated into the Admin Console. The setup endpoint locks down permanently.
+There are two ways to set up a new server. Use whichever suits you; they can be mixed.
+
+### Option A — the setup wizard (browser)
+
+On first start the server prints a one-time **setup key** and saves it to
+`<portalHome>/secrets/initialAdminPassword`. Open `http://your-server:8080` (you land on `/setup`):
+
+1. **Organization** — company name, logo URL and support link. Shown on the sign-in page (in every
+   browser) and in every email. All optional, all editable later in Settings.
+2. **Administrator** — paste the setup key, then your email, name and password (12+ characters).
+   You are signed in when this step completes, and the setup endpoint closes for good.
+3. **Database** — keep the built-in H2 database (fine for a trial or a small team), or connect
+   **PostgreSQL 15+** or **MySQL 8.0+ / MariaDB**. *Test connection*, then *Switch database &
+   restart*: everything created so far is copied across, the connection is saved to the
+   configuration file, the server restarts, and you sign in again on the new database.
+4. **Get started** — links to connect your first app, set up email and add users.
+
+The database step comes after the administrator on purpose: switching databases restarts the server,
+and a restart would issue a new setup key. Skipped it? The same move is under **Settings → Database**.
+
+### Option B — a configuration file
+
+On first start the server also writes `<portalHome>/portal.properties` with **every option listed
+and commented out**. Uncomment what you need and restart. Use another file with
+`--config=/path/to/file` or `PORTAL_CONFIG`.
+
+```properties
+# Public address (the OIDC issuer)
+spring.security.oauth2.authorizationserver.issuer=https://sso.example.com
+
+# Database — leave out for built-in H2
+spring.datasource.url=jdbc:postgresql://db.internal:5432/portalsso
+spring.datasource.username=portal
+spring.datasource.password=change-me
+#   MySQL: spring.datasource.url=jdbc:mysql://db.internal:3306/portalsso (dialect is automatic)
+
+# Organization — fills in only what the console has not set, so Settings edits survive restarts
+app.organization.name=Acme Corp
+app.organization.logo-url=https://www.example.com/logo.png
+app.organization.support-url=https://support.example.com
+
+# First administrator — skips the wizard; remove once you have signed in
+app.bootstrap.admin-email=admin@example.com
+app.bootstrap.admin-password=...
+```
+
+Precedence: command-line arguments → environment variables (`SPRING_DATASOURCE_URL`,
+`APP_ORGANIZATION_NAME`, …) → this file → built-in defaults. (The `DB_URL` shortcut only fills the
+built-in default, so a `spring.datasource.url` in this file wins over it.) The console writes to this file too (the database step, Settings →
+Database), but only the keys it owns: your other lines and comments are kept. The file can hold the
+database password, so keep it readable by the service account only.
 
 ---
 
@@ -192,7 +235,7 @@ If you started on the local embedded database and are ready to move to productio
 3. Provide your connection credentials or custom JDBC URL.
 4. Click **"Test Connection"** to verify network connectivity.
 5. Click **"Migrate to Target Database"**. Portal SSO runs Liquibase migrations on the target and copies all records (users, roles, OAuth clients, keys) with zero data loss.
-6. Click **"1-Click Switch & Restart"**. The application writes `portal.properties` and triggers an in-memory hot reload. The UI displays a 6-second reconnect countdown and automatically reloads connected to your new production database!
+6. Click **"1-Click Switch & Restart"**. The application updates the database keys in `portal.properties` (leaving the rest of the file alone) and triggers an in-memory hot reload. The UI displays a 6-second reconnect countdown and automatically reloads connected to your new production database!
 
 ---
 

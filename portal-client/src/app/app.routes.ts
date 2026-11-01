@@ -18,12 +18,21 @@ export const routes: Routes = [
     loadComponent: () => import('./features/docs/docs').then((m) => m.Docs),
   },
   {
+    // One page per guide (docs-content.ts); an unknown id shows Getting started.
+    path: 'docs/:guide',
+    loadComponent: () => import('./features/docs/docs').then((m) => m.Docs),
+  },
+  {
     path: 'download',
     loadComponent: () => import('./features/download/download').then((m) => m.Download),
   },
   {
     path: 'sign-in',
     loadComponent: () => import('./features/auth/login/login').then((m) => m.Login),
+  },
+  {
+    path: 'setup',
+    loadComponent: () => import('./features/setup/setup').then((m) => m.Setup),
   },
   {
     path: 'sign-up',

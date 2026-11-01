@@ -14,6 +14,16 @@ export interface SetupStatusResponse {
   databaseType: string;
   isEmbeddedDatabase: boolean;
   databaseProduct: string;
+  /** The configuration file the server reads; present only while setup is required. */
+  configFile?: string;
+  /** Pre-fills the wizard: set when the operator put app.organization.* in the config file. */
+  organization: SetupOrganization;
+}
+
+export interface SetupOrganization {
+  name: string | null;
+  logoUrl: string | null;
+  supportUrl: string | null;
 }
 
 export interface SetupInitializeRequest {
@@ -22,6 +32,9 @@ export interface SetupInitializeRequest {
   password: string;
   firstName?: string;
   lastName?: string;
+  organizationName?: string;
+  logoUrl?: string;
+  supportUrl?: string;
 }
 
 export interface SetupInitializeResponse {

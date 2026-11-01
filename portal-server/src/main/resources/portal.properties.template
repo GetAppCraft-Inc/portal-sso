@@ -1,0 +1,69 @@
+# =====================================================================================
+#  Portal SSO configuration
+# =====================================================================================
+#
+#  Everything here is optional. Out of the box Portal SSO runs on an embedded H2 database
+#  and the setup wizard (open /setup in a browser) asks for your organization, your
+#  administrator and, if you want one, a PostgreSQL or MySQL database.
+#
+#  Prefer files to the wizard? Uncomment what you need and restart. Values here override
+#  the built-in defaults; environment variables and --command-line arguments override this
+#  file. Use a different file with:  java -jar portal-sso.jar --config=/etc/portal-sso/portal.properties
+#
+#  The setup wizard and Settings -> Database edit this file in place: they change only the
+#  keys they own and keep the rest of it, comments included.
+#
+#  This file can hold your database password. Keep it readable by the service account only.
+# =====================================================================================
+
+
+# --- Public address ------------------------------------------------------------------
+# The URL users and apps reach this server on. Must match exactly what browsers see,
+# including https:// when behind a proxy; it is the OIDC issuer in every token.
+# spring.security.oauth2.authorizationserver.issuer=https://sso.example.com
+# server.port=8080
+
+
+# --- Database ------------------------------------------------------------------------
+# Leave commented to use the embedded H2 database in <portal home>/data. Fine for a trial
+# or a small team; use PostgreSQL or MySQL for production. The schema is created
+# automatically on first start against an empty database.
+#
+# PostgreSQL 15+
+# spring.datasource.url=jdbc:postgresql://localhost:5432/portalsso
+# spring.datasource.username=portal
+# spring.datasource.password=change-me
+#
+# MySQL 8.0+ / MariaDB (dialect settings are applied automatically)
+# spring.datasource.url=jdbc:mysql://localhost:3306/portalsso
+# spring.datasource.username=portal
+# spring.datasource.password=change-me
+
+
+# --- Organization --------------------------------------------------------------------
+# Shown on the sign-in page and in every email. Fills in only what has not been set in
+# the console yet, so editing it later under Settings is never undone by a restart.
+# app.organization.name=Acme Corp
+# The logo must be an absolute https:// URL: email clients fetch it themselves.
+# app.organization.logo-url=https://www.example.com/logo.png
+# app.organization.support-url=https://support.example.com
+
+
+# --- First administrator (skip the wizard entirely) ----------------------------------
+# With both set, the administrator is created at startup and no setup key is issued.
+# Password: at least 12 characters with upper case, lower case and a digit.
+# REMOVE both once you have signed in: anyone who can read this file knows the password.
+# app.bootstrap.admin-email=admin@example.com
+# app.bootstrap.admin-password=
+
+
+# --- At-rest encryption key ----------------------------------------------------------
+# Encrypts MFA secrets and the SMTP password. Generated automatically into
+# <portal home>/secrets when unset. Back it up with your database: losing it means every
+# user must re-enrol in MFA.
+# app.security.mfa.encryption-key=
+
+
+# --- Sign-up -------------------------------------------------------------------------
+# app.registration.enabled=false
+# app.registration.require-admin-approval=false
