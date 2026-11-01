@@ -87,11 +87,16 @@ class SetupWizardFirstRunTest {
     }
 
     private ResultActions initialize(String key, String email, String password) throws Exception {
+        return initialize(key, email, password, "https://acme.example/logo.png");
+    }
+
+    private ResultActions initialize(String key, String email, String password, String logoUrl) throws Exception {
         return mockMvc.perform(post("/api/public/setup/initialize")
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                        new SetupInitializeRequest(key, email, password, "Ada", "Owner"))));
+                        new SetupInitializeRequest(key, email, password, "Ada", "Owner", "Acme Corp",
+                                logoUrl, "https://support.acme.example"))));
     }
 
     @Test
@@ -143,6 +148,17 @@ class SetupWizardFirstRunTest {
     }
 
     @Test
+    @Order(4)
+    void aLogoThatMailClientsCannotFetchIsRefusedWithoutSpendingTheKey() throws Exception {
+        initialize(keyOnDisk(), ADMIN_EMAIL, ADMIN_PASSWORD, "data:image/png;base64,AAAA")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PRTL-4001"));
+
+        assertThat(userRepository.findByEmail(ADMIN_EMAIL)).isEmpty();
+        assertThat(setupKeyService.isIssued()).isTrue();
+    }
+
+    @Test
     @Order(5)
     void correctKeyCreatesTheAdministratorAndIsSpent() throws Exception {
         String key = keyOnDisk();
@@ -159,6 +175,11 @@ class SetupWizardFirstRunTest {
 
         assertThat(setupKeyService.isIssued()).isFalse();
         assertThat(Files.exists(setupKeyService.keyFile())).as("spent key file is deleted").isFalse();
+
+        // The organization is saved with the account, and the sign-in page can show it to anyone.
+        mockMvc.perform(get("/api/public/branding"))
+                .andExpect(jsonPath("$.productName").value("Acme Corp"))
+                .andExpect(jsonPath("$.logoUrl").value("https://acme.example/logo.png"));
 
         // Replaying the same key cannot mint a second administrator.
         initialize(key, "second@example.com", ADMIN_PASSWORD).andExpect(status().isConflict());

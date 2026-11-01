@@ -2,6 +2,7 @@ package com.tanmaysinghx.portalsso.bootstrap;
 
 import com.tanmaysinghx.portalsso.audit.entity.AuditAction;
 import com.tanmaysinghx.portalsso.audit.service.AuditService;
+import com.tanmaysinghx.portalsso.config.PortalConfigFile;
 import com.tanmaysinghx.portalsso.security.password.PasswordPolicy;
 import com.tanmaysinghx.portalsso.setup.SetupKeyService;
 import com.tanmaysinghx.portalsso.user.entity.Role;
@@ -195,8 +196,9 @@ public class AdminBootstrapper implements ApplicationRunner {
                 *************************************************************
                 Portal SSO initial setup is required.
 
-                Open %s/sign-in and enter this setup key to create
-                the first administrator:
+                Open %s/setup and enter this setup key to name your
+                organization, create the first administrator and pick a
+                database:
 
                   %s
 
@@ -205,9 +207,12 @@ public class AdminBootstrapper implements ApplicationRunner {
 
                 It works once. If the server restarts before setup is
                 finished, a new key replaces it.
+
+                Prefer configuration files? Every option is listed in
+                  %s
                 *************************************************************
                 *************************************************************
-                """.formatted(issuerUrl, key, setupKeyService.keyFile());
+                """.formatted(issuerUrl, key, setupKeyService.keyFile(), PortalConfigFile.resolve());
 
         System.out.println(banner);
         log.info(banner);

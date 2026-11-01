@@ -90,6 +90,54 @@ public class EmailSettingsService {
     }
 
     /**
+     * Sets the organization's name, logo and support link outside the Settings page: from the setup
+     * wizard, or from {@code app.organization.*} at startup. Null values are left alone.
+     *
+     * @param onlyWhereBlank true for configuration-file values, which fill gaps but must never undo
+     *     an edit an administrator made in the console
+     * @return whether anything was changed
+     */
+    @Transactional
+    public boolean applyOrganization(
+            String productName, String logoUrl, String supportUrl, boolean onlyWhereBlank, String source) {
+        EmailSettings settings = repository.findByConfigKey(EmailSettings.SINGLETON_KEY)
+                .orElseGet(EmailSettings::new);
+
+        List<String> changes = new ArrayList<>();
+        if (shouldApply(settings.getProductName(), productName, onlyWhereBlank)) {
+            settings.setProductName(productName);
+            changes.add("product name set");
+        }
+        if (shouldApply(settings.getLogoUrl(), logoUrl, onlyWhereBlank)) {
+            settings.setLogoUrl(logoUrl);
+            changes.add("logo set");
+        }
+        if (shouldApply(settings.getSupportUrl(), supportUrl, onlyWhereBlank)) {
+            settings.setSupportUrl(supportUrl);
+            changes.add("support URL set");
+        }
+        if (changes.isEmpty()) {
+            return false;
+        }
+
+        settings.setUpdatedBy(source);
+        EmailSettings saved = repository.save(settings);
+        auditService.recordSystemAction(
+                AuditAction.EMAIL_SETTINGS_UPDATED,
+                saved.getId(),
+                EmailBranding.from(saved, issuerUrl).productName(),
+                String.join("; ", changes) + " (" + source + ")");
+        return true;
+    }
+
+    private static boolean shouldApply(String current, String candidate, boolean onlyWhereBlank) {
+        if (candidate == null || Objects.equals(current, candidate)) {
+            return false;
+        }
+        return !onlyWhereBlank || current == null || current.isBlank();
+    }
+
+    /**
      * Whether a notification of this type should be sent at all.
      *
      * <p>Checked before anything is rendered or any socket is opened, so a switched-off

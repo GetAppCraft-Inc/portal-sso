@@ -1,17 +1,13 @@
 package com.tanmaysinghx.portalsso.database.service;
 
-import com.tanmaysinghx.portalsso.bootstrap.AdminBootstrapper;
+import com.tanmaysinghx.portalsso.config.PortalConfigFile;
 import com.tanmaysinghx.portalsso.database.dto.DatabaseStatusResponse;
 import com.tanmaysinghx.portalsso.database.dto.MigrateDatabaseRequest;
 import com.tanmaysinghx.portalsso.database.dto.MigrateDatabaseResponse;
 import com.tanmaysinghx.portalsso.database.dto.TestConnectionRequest;
 import com.tanmaysinghx.portalsso.database.dto.TestConnectionResponse;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
@@ -280,7 +276,7 @@ public class DatabaseMigrationService {
     }
 
     public String resolveConfigFilePath() {
-        return AdminBootstrapper.resolvePortalHome().resolve("portal.properties").toAbsolutePath().toString();
+        return PortalConfigFile.resolve().toString();
     }
 
     public void restartApplication() {
@@ -288,43 +284,29 @@ public class DatabaseMigrationService {
         com.tanmaysinghx.portalsso.PortalSsoAuthServerApplication.restart();
     }
 
+    /**
+     * Points the configuration file at the target database. Merges rather than rewrites: the file
+     * is also the operator's, and may hold their issuer URL, organization or anything else.
+     */
     private void savePropertiesFile(String targetUrl, String username, String password) {
+        Path propsFile = PortalConfigFile.resolve();
+        String lowerUrl = targetUrl.toLowerCase(Locale.ROOT);
+        boolean mysql = lowerUrl.contains("mysql") || lowerUrl.contains("mariadb");
+
+        Map<String, String> changes = new LinkedHashMap<>();
+        changes.put("spring.datasource.url", targetUrl);
+        changes.put("spring.datasource.username", username);
+        changes.put("spring.datasource.password", password);
+        // Cleared when moving away from MySQL, so a later move to PostgreSQL does not inherit them.
+        changes.put("spring.profiles.include", mysql ? "mysql" : null);
+        changes.put("spring.jpa.properties.hibernate.type.preferred_boolean_jdbc_type", mysql ? "TINYINT" : null);
+        changes.put("spring.datasource.hikari.connection-init-sql",
+                mysql ? "SET SESSION sql_require_primary_key=0" : null);
         try {
-            Path portalHome = AdminBootstrapper.resolvePortalHome();
-            Files.createDirectories(portalHome);
-            Path propsFile = portalHome.resolve("portal.properties");
-
-            StringBuilder sb = new StringBuilder();
-            sb.append("# Portal SSO Database Configuration\n");
-            sb.append("# Generated during database migration\n");
-            sb.append("spring.datasource.url=").append(targetUrl).append("\n");
-            if (username != null) {
-                sb.append("spring.datasource.username=").append(username).append("\n");
-            }
-            if (password != null) {
-                sb.append("spring.datasource.password=").append(password).append("\n");
-            }
-            if (targetUrl != null && (targetUrl.toLowerCase(Locale.ROOT).contains("mysql") || targetUrl.toLowerCase(Locale.ROOT).contains("mariadb"))) {
-                sb.append("spring.profiles.include=mysql\n");
-                sb.append("spring.jpa.properties.hibernate.type.preferred_boolean_jdbc_type=TINYINT\n");
-                sb.append("spring.datasource.hikari.connection-init-sql=SET SESSION sql_require_primary_key=0\n");
-            }
-
-            Files.writeString(
-                    propsFile,
-                    sb.toString(),
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE);
-
-            try {
-                Files.setPosixFilePermissions(propsFile, PosixFilePermissions.fromString("rw-------"));
-            } catch (UnsupportedOperationException ignored) {
-            }
-            log.info("Saved target database configuration to {}", propsFile.toAbsolutePath());
+            PortalConfigFile.update(propsFile, changes, "Database, set from the Portal SSO console");
+            log.info("Saved target database configuration to {}", propsFile);
         } catch (IOException e) {
-            log.warn("Could not save portal.properties configuration: {}", e.getMessage());
+            log.warn("Could not save {}: {}", propsFile, e.getMessage());
         }
     }
 

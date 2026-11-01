@@ -1,6 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { map } from 'rxjs';
 import { ThemeService } from '../../core/services/theme.service';
+import { DOC_GROUPS, DOC_GUIDES, DocGuide } from './docs-content';
 
 interface Endpoint {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -9,30 +13,48 @@ interface Endpoint {
   auth: 'Admin' | 'Session' | 'Public' | 'OAuth2';
 }
 
-interface DocSection {
-  id: string;
-  title: string;
+/** A run of text with at most one inline mark. */
+interface Segment {
+  text: string;
+  kind: 'text' | 'code' | 'bold' | 'link';
+  guide?: string;
 }
 
+type Stack = 'react' | 'angular' | 'spring' | 'jsp' | 'nodejs' | 'python' | 'go';
+
+const ORIGIN_TOKEN = /\{\{ORIGIN\}\}/g;
+const INLINE = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([a-z0-9-]+)\)/g;
+
+/** Public documentation, one page per guide at /docs/:guide. Content lives in docs-content.ts. */
 @Component({
   selector: 'app-docs',
-  imports: [RouterLink],
+  imports: [RouterLink, NgTemplateOutlet],
   templateUrl: './docs.html',
 })
 export class Docs {
   readonly themeService = inject(ThemeService);
+  private readonly route = inject(ActivatedRoute);
   readonly copied = signal<string | null>(null);
 
-  readonly sections: DocSection[] = [
-    { id: 'installation', title: '1. Installation & Setup' },
-    { id: 'add-application', title: '2. Adding Applications' },
-    { id: 'integration', title: '3. App Integration (OIDC)' },
-    { id: 'api-reference', title: '4. API Reference' },
-    { id: 'config', title: '5. Configuration' },
-  ];
+  /** Snippets show this server's own address, so they are right wherever the docs are read. */
+  readonly origin = typeof window === 'undefined' ? 'https://sso.example.com' : window.location.origin;
 
-  readonly dockerSnippet = `# Single Container (Instant Trial)
-docker run -d -p 8080:8080 -v portal-sso-data:/root/.portal-sso tanmaysinghx/portal-sso:latest`;
+  readonly groups = DOC_GROUPS.map((group) => ({
+    group,
+    guides: DOC_GUIDES.filter((g) => g.group === group),
+  }));
+
+  private readonly guideId = toSignal(this.route.paramMap.pipe(map((p) => p.get('guide'))), {
+    initialValue: null,
+  });
+
+  readonly guide = computed<DocGuide>(
+    () => DOC_GUIDES.find((g) => g.id === this.guideId()) ?? DOC_GUIDES[0],
+  );
+
+  readonly position = computed(() => DOC_GUIDES.indexOf(this.guide()));
+  readonly previous = computed(() => DOC_GUIDES[this.position() - 1] ?? null);
+  readonly next = computed(() => DOC_GUIDES[this.position() + 1] ?? null);
 
   readonly oidcEndpoints: Endpoint[] = [
     { method: 'GET', path: '/.well-known/openid-configuration', summary: 'Discovery document', auth: 'Public' },
@@ -44,37 +66,41 @@ docker run -d -p 8080:8080 -v portal-sso-data:/root/.portal-sso tanmaysinghx/por
     { method: 'GET', path: '/connect/logout', summary: 'End the OIDC session', auth: 'Public' },
   ];
 
-  readonly configKeys = [
-    { key: 'ISSUER_URL', value: 'http://localhost:8080', note: 'Must match how clients reach this server' },
-    { key: 'DB_URL', value: 'jdbc:h2:...', note: 'Database URL (MySQL, PostgreSQL, H2)' },
-    { key: 'app.registration.enabled', value: 'false', note: 'Allow public self-registration' },
+  readonly activeStack = signal<Stack>('react');
+
+  readonly stacks: { id: Stack; label: string; caption: string }[] = [
+    { id: 'react', label: 'React / Next.js', caption: 'oidc-client-ts configuration' },
+    { id: 'angular', label: 'Angular', caption: 'angular-auth-oidc-client setup' },
+    { id: 'spring', label: 'Spring Boot', caption: 'application.yml + PKCE customizer' },
+    { id: 'nodejs', label: 'Node.js', caption: 'openid-client Express handler' },
+    { id: 'python', label: 'Python', caption: 'Authlib (FastAPI / Starlette)' },
+    { id: 'go', label: 'Go', caption: 'golang.org/x/oauth2 config' },
+    { id: 'jsp', label: 'Legacy JSP / JSF', caption: 'oauth2-proxy.cfg (reverse proxy, no code changes)' },
   ];
 
-  readonly activeStack = signal<'react' | 'angular' | 'spring' | 'jsp' | 'nodejs' | 'python' | 'go'>('react');
-
-  readonly snippets = {
+  readonly snippets: Record<Stack, string> = {
     react: `// React / Next.js with oidc-client-ts
 import { UserManager } from 'oidc-client-ts';
 
 export const userManager = new UserManager({
-  authority: 'http://localhost:8080',
+  authority: '{{ORIGIN}}',
   client_id: 'your-client-id',
   redirect_uri: 'http://localhost:3000/callback',
   response_type: 'code',
   scope: 'openid profile email',
-  code_challenge_method: 'S256', // RFC 7636 PKCE
+  // PKCE (S256) is on by default in oidc-client-ts and required by Portal SSO.
 });
 
 export const signIn = () => userManager.signinRedirect();`,
 
     angular: `// Angular with angular-auth-oidc-client
-import { provideAuth, LogLevel } from 'angular-auth-oidc-client';
+import { provideAuth } from 'angular-auth-oidc-client';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideAuth({
       config: {
-        authority: 'http://localhost:8080',
+        authority: '{{ORIGIN}}',
         redirectUrl: 'http://localhost:4200/callback',
         clientId: 'your-client-id',
         scope: 'openid profile email',
@@ -99,17 +125,27 @@ spring:
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
         provider:
           portal-sso:
-            issuer-uri: http://localhost:8080`,
+            issuer-uri: {{ORIGIN}}
 
-    jsp: `## Zero-Code Reverse Proxy for Legacy JSP / JSF (oauth2-proxy.cfg)
+// Portal SSO requires PKCE for confidential clients too. Turn it on explicitly:
+@Bean
+SecurityFilterChain security(HttpSecurity http, ClientRegistrationRepository registrations) throws Exception {
+    var resolver = new DefaultOAuth2AuthorizationRequestResolver(registrations, "/oauth2/authorization");
+    resolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
+    http.oauth2Login(login -> login.authorizationEndpoint(a -> a.authorizationRequestResolver(resolver)));
+    return http.build();
+}`,
+
+    jsp: `## Zero-code reverse proxy for legacy JSP / JSF (oauth2-proxy.cfg)
 http_address = "0.0.0.0:4180"
-upstreams = ["http://127.0.0.1:8080/"] # Legacy Tomcat / Wildfly
+upstreams = ["http://127.0.0.1:8080/"] # Legacy Tomcat / WildFly
 
 provider = "oidc"
-oidc_issuer_url = "http://localhost:8080"
+oidc_issuer_url = "{{ORIGIN}}"
 client_id = "your-client-id"
 client_secret = "your-client-secret"
 redirect_url = "http://localhost:4180/oauth2/callback"
+code_challenge_method = "S256"
 
 # Injects identity headers into JSP requests:
 pass_user_headers = true
@@ -118,28 +154,34 @@ email_domains = ["*"]
 cookie_secret = "32-byte-secret-key-goes-here-1234"`,
 
     nodejs: `// Node.js / Express with openid-client
-const { Issuer } = require('openid-client');
+const { Issuer, generators } = require('openid-client');
 
-async function setupAuth() {
-  const portalIssuer = await Issuer.discover('http://localhost:8080');
-  const client = new portalIssuer.Client({
-    client_id: 'your-client-id',
-    client_secret: 'your-client-secret',
-    redirect_uris: ['http://localhost:3000/callback'],
-    response_types: ['code'],
-  });
-}`,
+const issuer = await Issuer.discover('{{ORIGIN}}');
+const client = new issuer.Client({
+  client_id: 'your-client-id',
+  client_secret: 'your-client-secret',
+  redirect_uris: ['http://localhost:3000/callback'],
+  response_types: ['code'],
+});
 
-    python: `# Python / FastAPI / Starlette with Authlib
+// Per sign-in: keep the verifier in the session, send the challenge.
+const codeVerifier = generators.codeVerifier();
+const url = client.authorizationUrl({
+  scope: 'openid profile email',
+  code_challenge: generators.codeChallenge(codeVerifier),
+  code_challenge_method: 'S256',
+});`,
+
+    python: `# Python (FastAPI / Starlette) with Authlib
 from authlib.integrations.starlette_client import OAuth
 
 oauth = OAuth()
 oauth.register(
     name='portal_sso',
-    server_metadata_url='http://localhost:8080/.well-known/openid-configuration',
+    server_metadata_url='{{ORIGIN}}/.well-known/openid-configuration',
     client_id='your-client-id',
     client_secret='your-client-secret',
-    client_kwargs={'scope': 'openid profile email'}
+    client_kwargs={'scope': 'openid profile email', 'code_challenge_method': 'S256'},
 )`,
 
     go: `// Go with golang.org/x/oauth2
@@ -150,12 +192,48 @@ var oauthConfig = &oauth2.Config{
     ClientSecret: "your-client-secret",
     Scopes:       []string{"openid", "profile", "email"},
     Endpoint: oauth2.Endpoint{
-        AuthURL:  "http://localhost:8080/oauth2/authorize",
-        TokenURL: "http://localhost:8080/oauth2/token",
+        AuthURL:  "{{ORIGIN}}/oauth2/authorize",
+        TokenURL: "{{ORIGIN}}/oauth2/token",
     },
-    RedirectURL: "http://localhost:8080/callback",
-}`
+    RedirectURL: "http://localhost:8081/callback",
+}
+
+// Per sign-in:
+//   verifier := oauth2.GenerateVerifier()
+//   url := oauthConfig.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+//   token, err := oauthConfig.Exchange(ctx, code, oauth2.VerifierOption(verifier))`,
   };
+
+  readonly activeSnippet = computed(() => this.withOrigin(this.snippets[this.activeStack()]));
+  readonly activeCaption = computed(() => this.stacks.find((s) => s.id === this.activeStack())?.caption ?? '');
+
+  withOrigin(text: string): string {
+    return text.replace(ORIGIN_TOKEN, this.origin);
+  }
+
+  /** Splits `code`, **bold** and [text](guide) out of a line. Content is ours, so no HTML is ever built. */
+  segments(text: string): Segment[] {
+    const source = this.withOrigin(text);
+    const out: Segment[] = [];
+    let last = 0;
+    for (const match of source.matchAll(INLINE)) {
+      if (match.index > last) {
+        out.push({ text: source.slice(last, match.index), kind: 'text' });
+      }
+      if (match[1] !== undefined) {
+        out.push({ text: match[1], kind: 'code' });
+      } else if (match[2] !== undefined) {
+        out.push({ text: match[2], kind: 'bold' });
+      } else {
+        out.push({ text: match[3], kind: 'link', guide: match[4] });
+      }
+      last = match.index + match[0].length;
+    }
+    if (last < source.length) {
+      out.push({ text: source.slice(last), kind: 'text' });
+    }
+    return out;
+  }
 
   methodClass(method: Endpoint['method']): string {
     switch (method) {
@@ -169,9 +247,11 @@ var oauthConfig = &oauth2.Config{
 
   async copy(text: string, id: string): Promise<void> {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(this.withOrigin(text));
       this.copied.set(id);
       setTimeout(() => this.copied.set(null), 1600);
-    } catch {}
+    } catch {
+      // Clipboard blocked (insecure origin or permissions); the text is still selectable.
+    }
   }
 }

@@ -150,7 +150,15 @@ When modifying or adding code, you **MUST** uphold these rules:
 - `POST /api/public/setup/initialize` is unauthenticated, so it **always requires the setup key** from `SetupKeyService` (256-bit, SHA-256 held in memory only, single use, consumed atomically, key file deleted on success). Never add a path that creates an administrator without it.
 - The wizard never adopts an existing account (that would let it set someone else's password). Recovering a disabled admin is what `app.bootstrap.*` is for.
 - Validation runs before the key is spent, so a typo in the password does not cost the operator their key.
+- The wizard lives at `/setup` (`features/setup/`): Organization → Administrator → Database → Get started. The organization is sent with the administrator and saved in the same transaction (`EmailSettingsService.applyOrganization`). The database step comes **after** the administrator on purpose: switching restarts the server, which would issue a new setup key, so it is the ordinary admin migration run from the new admin's session. Don't move it earlier.
 - `e2e/first-run-setup.spec.ts` drives this flow in a real browser against the packaged JAR. Keep it passing; it is the test that proves a new install is usable.
+
+### 7a. Configuration File
+- `PortalConfigFile` owns the operator's file: `<portal home>/portal.properties`, or `--config=<file>` / `PORTAL_CONFIG`. It is imported before Spring starts (`PortalSsoAuthServerApplication.initPortalDirectories`), so any Spring property works there; env vars and CLI args still win.
+- First boot writes `portal.properties.template` (all comments) into the default location if absent. Never into a file the operator named.
+- Anything the console writes to it goes through `PortalConfigFile.update`, which **merges**: only the keys being changed are touched, comments and other lines are kept. Never truncate this file.
+- `app.organization.*` (`OrganizationSeeder`) fills in branding only where the console has none, so a Settings edit is never undone by a restart.
+- The embedded H2 URL must not use `DATABASE_TO_LOWER=TRUE`: Liquibase then fails to find its own changelog table and every start after the first dies. Keep SQL identifiers unquoted.
 
 ### 8. Client IP Resolution
 - Never inspect `X-Forwarded-For` raw headers directly in controllers. Always use `ClientIpResolver.getClientIp(request)`.

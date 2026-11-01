@@ -8,7 +8,11 @@ spring:
         issuer: ${ISSUER_URL:http://localhost:8080}
 
   datasource:
-    url: ${DB_URL:jdbc:h2:file:${PORTAL_HOME:${user.home}/.portal-sso}/data/portalsso;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH}
+    # Embedded H2 unless a database is configured (portal.properties, DB_URL, or the setup wizard).
+    # No DATABASE_TO_LOWER: with it, Liquibase looks for DATABASECHANGELOG, H2 has stored
+    # "databasechangelog", and every start after the first died trying to create it again. Nothing
+    # here quotes identifiers, so H2's default upper-case folding is invisible to the application.
+    url: ${DB_URL:jdbc:h2:file:${PORTAL_HOME:${user.home}/.portal-sso}/data/portalsso;MODE=PostgreSQL;DEFAULT_NULL_ORDERING=HIGH}
     username: ${DB_USERNAME:sa}
     password: ${DB_PASSWORD:}
 
