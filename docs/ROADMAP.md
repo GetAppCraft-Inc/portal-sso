@@ -63,6 +63,7 @@ _Last reviewed: 2026-11-03 (production hardening and dependency patches)_
 - Thymeleaf HTML + text templates: welcome, new-device, sign-in notice, magic links; branding & per-message switches
 
 ### Operations
+- **Setup visual refresh (2026-11-03)**: responsive progress sidebar, readable license paragraphs, stronger action contrast, consistent form spacing, light/dark themes, and heading focus without a browser outline. Verified at 320/390/768/1440px; 41 frontend tests, eight packaged-JAR browser tests and the production build pass.
 - **License agreement and streamlined setup (2026-11-03)**: bundled Apache License 2.0 is the first step, with unchecked explicit acceptance enforced before spending the setup key and recorded with administrator creation. Optional branding is collapsed, configured external databases skip selection, status failures offer retry, and stale connection tests cannot enable migration. 41 frontend tests, 11 backend setup tests, and eight packaged-JAR browser tests pass.
 - **Production hardening (2026-11-03)**: explicit readiness/liveness probes, database-aware readiness, admin-only additional Actuator endpoints, persistent unprivileged container home, localhost Compose binding, optional bootstrap credentials, corrected deployment examples; password change/reset/expiry revoke stored OAuth grants. Angular 21 security patches and runtime dependency audit gate. Validation and outstanding rollout checks: `docs/PRODUCTION_READINESS.md`.
 - Single JAR with embedded Angular SPA; Docker image + Compose; `install.sh`

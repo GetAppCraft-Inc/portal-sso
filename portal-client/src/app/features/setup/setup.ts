@@ -14,12 +14,12 @@ import { ThemeService } from '../../core/services/theme.service';
 type Step = 'license' | 'organization' | 'administrator' | 'database' | 'finish';
 type DatabaseChoice = 'EMBEDDED' | 'POSTGRESQL' | 'MYSQL';
 
-export const SETUP_STEPS: { id: Step; label: string }[] = [
-  { id: 'license', label: 'License' },
-  { id: 'organization', label: 'Organization' },
-  { id: 'administrator', label: 'Administrator' },
-  { id: 'database', label: 'Database' },
-  { id: 'finish', label: 'Get started' },
+export const SETUP_STEPS: { id: Step; label: string; description: string }[] = [
+  { id: 'license', label: 'License', description: 'Review and accept' },
+  { id: 'organization', label: 'Organization', description: 'Make it yours' },
+  { id: 'administrator', label: 'Administrator', description: 'Create your account' },
+  { id: 'database', label: 'Database', description: 'Choose your storage' },
+  { id: 'finish', label: 'Get started', description: 'Connect your first app' },
 ];
 
 /**
@@ -34,6 +34,7 @@ export const SETUP_STEPS: { id: Step; label: string }[] = [
   selector: 'app-setup',
   imports: [FormsModule, RouterLink],
   templateUrl: './setup.html',
+  styleUrl: './setup.css',
 })
 export class Setup {
   private readonly setupService = inject(SetupService);
@@ -47,22 +48,22 @@ export class Setup {
 
   // The same light/dark pairs as the sign-in page, named once instead of repeated per field.
   readonly inputClass = computed(() =>
-    'block w-full rounded-lg border px-3 py-2.5 text-sm transition-colors focus:outline-none focus:ring-2 ' +
+    'block w-full rounded-xl border px-3.5 py-3 text-sm transition-colors focus:outline-none focus:ring-2 ' +
     (this.themeService.isDark()
       ? 'border-ink-700 bg-ink-950 text-white placeholder:text-ink-600 focus:border-brand-500 focus:ring-brand-500/20'
       : 'border-slate-300 bg-white text-slate-950 placeholder:text-slate-400 focus:border-brand-500 focus:ring-brand-500/20'),
   );
   readonly labelClass = computed(
-    () => 'mb-1.5 block text-xs font-medium ' + (this.themeService.isDark() ? 'text-ink-300' : 'text-slate-700'),
+    () => 'mb-2 block text-sm font-medium ' + (this.themeService.isDark() ? 'text-ink-300' : 'text-slate-700'),
   );
   readonly hintClass = computed(
-    () => 'mt-1.5 text-[11px] leading-5 ' + (this.themeService.isDark() ? 'text-ink-500' : 'text-slate-500'),
+    () => 'mt-2 text-xs leading-5 ' + (this.themeService.isDark() ? 'text-ink-500' : 'text-slate-500'),
   );
   readonly mutedClass = computed(() => (this.themeService.isDark() ? 'text-ink-400' : 'text-slate-600'));
   readonly headingClass = computed(() => (this.themeService.isDark() ? 'text-white' : 'text-slate-950'));
   readonly cardClass = computed(
     () =>
-      'rounded-xl border p-6 shadow-sm ' +
+      'rounded-2xl border p-5 sm:p-6 ' +
       (this.themeService.isDark() ? 'border-ink-800 bg-ink-900' : 'border-slate-200 bg-white'),
   );
   readonly secondaryButtonClass = computed(
@@ -73,7 +74,7 @@ export class Setup {
         : 'border-slate-300 text-slate-700 hover:bg-slate-50'),
   );
   readonly primaryButtonClass =
-    'flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:cursor-not-allowed disabled:opacity-60';
+    'flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-700 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45';
 
   choiceClass(selected: boolean): string {
     const dark = this.themeService.isDark();
@@ -113,6 +114,9 @@ export class Setup {
   readonly licenseAccepted = signal(false);
   readonly licenseId = signal('');
   readonly licenseText = signal<string | null>(null);
+  readonly licenseParagraphs = computed(() =>
+    (this.licenseText() ?? '').trim().split(/\n\s*\n/).map((text) => text.replace(/\s+/g, ' ').trim()).filter(Boolean),
+  );
   readonly licenseLoading = signal(false);
   readonly licenseFailed = signal(false);
   readonly stepIndex = computed(() => this.steps.findIndex((s) => s.id === this.step()));
