@@ -1,12 +1,10 @@
 # Portal SSO — self-hosting stack.
 #
-#   cp .env.example .env      # then edit it; every value is required
+#   cp .env.example .env      # then set the required credentials and public issuer
 #   docker compose up -d
 #
-# There are deliberately no default credentials anywhere in this file. Each secret is written
-# ${VAR:?message}, so compose refuses to start and says which value is missing rather than falling
-# back to something guessable. A self-hosted identity server that ships with a known admin password
-# or a known encryption key is worse than one that will not boot.
+# Required secrets use ${VAR:?message}, so Compose refuses to start when they are missing.
+# Bootstrap credentials are optional: leave them empty to use the setup-key wizard.
 
 name: portal-sso
 
@@ -37,12 +35,15 @@ services:
       context: .
       dockerfile: Dockerfile
     image: portal-sso:latest
+    stop_grace_period: 45s
+    volumes:
+      - portal-app-data:/var/lib/portal-sso
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${SERVER_PORT:-8080}:8080"
+      - "${BIND_ADDRESS:-127.0.0.1}:${SERVER_PORT:-8080}:8080"
     environment:
       DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-portalsso}
       DB_USERNAME: ${DB_USERNAME:?set DB_USERNAME in .env}
@@ -57,10 +58,10 @@ services:
       # exist the server refuses to start. Back it up: losing it means every enrolled user re-enrols.
       APP_SECURITY_MFA_ENCRYPTION_KEY: ${APP_SECURITY_MFA_ENCRYPTION_KEY:?set APP_SECURITY_MFA_ENCRYPTION_KEY in .env}
 
-      # The first administrator, created on first boot only. Remove both from .env once you have
-      # signed in — while they are set, anyone who can read your configuration knows this password.
-      APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:?set APP_BOOTSTRAP_ADMIN_EMAIL in .env}
-      APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:?set APP_BOOTSTRAP_ADMIN_PASSWORD in .env}
+      # Optional bootstrap; leave empty to use the one-time setup-key wizard.
+      # Remove both credentials from .env after signing in.
+      APP_BOOTSTRAP_ADMIN_EMAIL: ${APP_BOOTSTRAP_ADMIN_EMAIL:-}
+      APP_BOOTSTRAP_ADMIN_PASSWORD: ${APP_BOOTSTRAP_ADMIN_PASSWORD:-}
 
       # Session cookies are marked Secure by default, which means a browser will not send them over
       # plain http. For a local trial without TLS, set SERVER_SERVLET_SESSION_COOKIE_SECURE=false in
@@ -74,4 +75,5 @@ services:
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75.0}
 
 volumes:
+  portal-app-data:
   portal-db-data:

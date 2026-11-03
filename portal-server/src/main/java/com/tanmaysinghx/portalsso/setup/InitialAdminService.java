@@ -101,7 +101,9 @@ public class InitialAdminService {
 
     @Transactional
     public User createAdmin(
-            String email, String password, String firstName, String lastName, Organization organization) {
+            String email, String password, String firstName, String lastName, Organization organization,
+            boolean licenseAccepted, String licenseId) {
+        SetupLicense.requireAcceptance(licenseAccepted, licenseId);
         validate(email, password, organization);
 
         Role adminRole = roleRepository.findByName(RoleService.ADMIN_ROLE)
@@ -122,6 +124,8 @@ public class InitialAdminService {
         User saved = userRepository.save(user);
         auditService.recordSystemAction(
                 AuditAction.ADMIN_BOOTSTRAPPED, saved.getId(), saved.getEmail(), "setupWizard=true");
+        auditService.recordSystemAction(
+                AuditAction.SETUP_LICENSE_ACCEPTED, saved.getId(), saved.getEmail(), "licenseId=" + SetupLicense.ID);
         // Same transaction as the account: a wizard that half-finished would leave the operator
         // signed in to an unbranded server, wondering whether to run it again (it cannot be).
         emailSettingsService.applyOrganization(

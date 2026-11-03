@@ -157,7 +157,9 @@ When modifying or adding code, you **MUST** uphold these rules:
 - `POST /api/public/setup/initialize` is unauthenticated, so it **always requires the setup key** from `SetupKeyService` (256-bit, SHA-256 held in memory only, single use, consumed atomically, key file deleted on success). Never add a path that creates an administrator without it.
 - The wizard never adopts an existing account (that would let it set someone else's password). Recovering a disabled admin is what `app.bootstrap.*` is for.
 - Validation runs before the key is spent, so a typo in the password does not cost the operator their key.
-- The wizard lives at `/setup` (`features/setup/`): Organization → Administrator → Database → Get started. The organization is sent with the administrator and saved in the same transaction (`EmailSettingsService.applyOrganization`). The database step comes **after** the administrator on purpose: switching restarts the server, which would issue a new setup key, so it is the ordinary admin migration run from the new admin's session. Don't move it earlier.
+- The wizard lives at `/setup` (`features/setup/`): License → Organization → Administrator → Database → Get started.
+- The wizard requires explicit Apache-2.0 acceptance (`licenseAccepted=true`, `licenseId=Apache-2.0`) before spending the setup key; `SETUP_LICENSE_ACCEPTED` is recorded in the same transaction as administrator creation. The license is bundled in `LICENSE.txt` and `portal-client/public/legal/LICENSE.txt`; keep those copies identical.
+- The organization is sent with the administrator and saved in the same transaction (`EmailSettingsService.applyOrganization`). The database step comes **after** the administrator on purpose: switching restarts the server, which would issue a new setup key, so it is the ordinary admin migration run from the new admin's session. Don't move it earlier.
 - `e2e/first-run-setup.spec.ts` drives this flow in a real browser against the packaged JAR. Keep it passing; it is the test that proves a new install is usable.
 
 ### 7a. Configuration File

@@ -247,3 +247,21 @@ app:
     # address they typed.
     require-admin-approval: false
     default-role: ROLE_USER
+
+# Health probes work outside Kubernetes too (including the Docker HEALTHCHECK).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+        liveness:
+          include: livenessState

@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tanmaysinghx.portalsso.audit.entity.AuditAction;
+import com.tanmaysinghx.portalsso.audit.repository.AuditEventRepository;
 import com.tanmaysinghx.portalsso.setup.SetupKeyService;
 import com.tanmaysinghx.portalsso.setup.web.SetupController.SetupInitializeRequest;
 import com.tanmaysinghx.portalsso.user.entity.User;
@@ -80,6 +82,9 @@ class SetupWizardFirstRunTest {
     @Autowired
     private SetupKeyService setupKeyService;
 
+    @Autowired
+    private AuditEventRepository auditEventRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private String keyOnDisk() throws IOException {
@@ -96,7 +101,7 @@ class SetupWizardFirstRunTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
                         new SetupInitializeRequest(key, email, password, "Ada", "Owner", "Acme Corp",
-                                logoUrl, "https://support.acme.example"))));
+                                logoUrl, "https://support.acme.example", true, "Apache-2.0"))));
     }
 
     @Test
@@ -105,8 +110,30 @@ class SetupWizardFirstRunTest {
         mockMvc.perform(get("/api/public/setup/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.setupRequired").value(true))
+                .andExpect(jsonPath("$.licenseId").value("Apache-2.0"))
                 .andExpect(jsonPath("$.setupKeyIssued").value(true))
                 .andExpect(jsonPath("$.setupKeyFile").value(setupKeyService.keyFile().toString()));
+    }
+
+    @Test
+    @Order(2)
+    void missingDeclinedOrDifferentLicenseDoesNotSpendTheSetupKey() throws Exception {
+        String key = keyOnDisk();
+        for (String fields : new String[] {
+                "", ",\"licenseAccepted\":false,\"licenseId\":\"Apache-2.0\"",
+                ",\"licenseAccepted\":true", ",\"licenseAccepted\":true,\"licenseId\":\"different-license\""}) {
+            mockMvc.perform(post("/api/public/setup/initialize").with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"setupKey\":\"" + key + "\",\"email\":\"" + ADMIN_EMAIL
+                                    + "\",\"password\":\"" + ADMIN_PASSWORD + "\"" + fields + "}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("PRTL-4001"));
+            assertThat(setupKeyService.isIssued()).isTrue();
+            assertThat(keyOnDisk()).isEqualTo(key);
+            assertThat(userRepository.count()).isZero();
+            assertThat(auditEventRepository.findAll())
+                    .noneMatch(e -> e.getAction() == AuditAction.SETUP_LICENSE_ACCEPTED);
+        }
     }
 
     @Test
@@ -172,6 +199,15 @@ class SetupWizardFirstRunTest {
         assertThat(admin.getFirstName()).isEqualTo("Ada");
         assertThat(admin.getRoles()).extracting("name").contains(RoleService.ADMIN_ROLE, "ROLE_USER");
         assertThat(passwordEncoder.matches(ADMIN_PASSWORD, admin.getPasswordHash())).isTrue();
+
+        assertThat(auditEventRepository.findAll())
+                .filteredOn(e -> e.getAction() == AuditAction.SETUP_LICENSE_ACCEPTED)
+                .singleElement().satisfies(event -> {
+                    assertThat(event.getTargetId()).isEqualTo(admin.getId().toString());
+                    assertThat(event.getTargetLabel()).isEqualTo(ADMIN_EMAIL);
+                    assertThat(event.getDetails()).isEqualTo("licenseId=Apache-2.0");
+                    assertThat(event.getOccurredAt()).isNotNull();
+                });
 
         assertThat(setupKeyService.isIssued()).isFalse();
         assertThat(Files.exists(setupKeyService.keyFile())).as("spent key file is deleted").isFalse();

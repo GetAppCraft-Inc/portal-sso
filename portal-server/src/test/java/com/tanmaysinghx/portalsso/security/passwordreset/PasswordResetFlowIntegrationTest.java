@@ -49,6 +49,7 @@ class PasswordResetFlowIntegrationTest {
     private static final String NEW_PASSWORD = "FreshPassword456!";
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     @Autowired private PasswordResetTokenRepository tokenRepository;
     @Autowired private SmtpSettingsRepository smtpSettingsRepository;
     @Autowired private UserRepository userRepository;
@@ -215,6 +216,8 @@ class PasswordResetFlowIntegrationTest {
 
     @Test
     void aSuccessfulResetSetsThePasswordClearsLockoutAndSignsOutEverywhere() throws Exception {
+        String grantId = insertGrant(EMAIL);
+        String unrelatedGrantId = insertGrant("unrelated-" + UUID.randomUUID() + "@example.com");
         user.setAccountLocked(true);
         user.setFailedLoginAttempts(5);
         userRepository.save(user);
@@ -225,6 +228,12 @@ class PasswordResetFlowIntegrationTest {
         mockMvc.perform(post("/api/public/password-reset/confirm").with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content(confirmBody(token, NEW_PASSWORD)))
                 .andExpect(status().isOk());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE id = ?", Integer.class, grantId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE id = ?", Integer.class, unrelatedGrantId)).isEqualTo(1);
+        jdbcTemplate.update("DELETE FROM oauth2_authorization WHERE id = ?", unrelatedGrantId);
 
         User after = userRepository.findByEmail(EMAIL).orElseThrow();
         assertThat(passwordEncoder.matches(NEW_PASSWORD, after.getPasswordHash())).isTrue();
@@ -259,5 +268,12 @@ class PasswordResetFlowIntegrationTest {
         session.setAttribute(FindByIndexNameSessionRepository.PRINCIPAL_NAME_INDEX_NAME, email);
         repository.save(session);
         return session.getId();
+    }
+    private String insertGrant(String principal) {
+        String id = UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "INSERT INTO oauth2_authorization (id, registered_client_id, principal_name, authorization_grant_type) VALUES (?, ?, ?, ?)",
+                id, "credential-change-test", principal, "authorization_code");
+        return id;
     }
 }

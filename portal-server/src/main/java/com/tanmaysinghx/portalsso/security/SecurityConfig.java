@@ -187,6 +187,9 @@ public class SecurityConfig {
                         .requestMatchers(PathPatternRequestMatcher.pathPattern("/mfa-challenge")).permitAll()
                         .requestMatchers(PathPatternRequestMatcher.pathPattern("/password-expired")).permitAll()
                         .requestMatchers(PathPatternRequestMatcher.pathPattern("/api/**")).authenticated()
+                        .requestMatchers("/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness").permitAll()
+                        // Protect any additional endpoints an operator elects to expose.
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         // The consent screen names the application and the signed-in user, so it is
                         // only meaningful — and only safe to render — for an authenticated session.
                         .requestMatchers(PathPatternRequestMatcher.pathPattern("/oauth2/consent")).authenticated()

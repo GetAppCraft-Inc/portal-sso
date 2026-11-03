@@ -2,6 +2,7 @@ package com.tanmaysinghx.portalsso.user.service;
 
 import com.tanmaysinghx.portalsso.audit.entity.AuditAction;
 import com.tanmaysinghx.portalsso.audit.service.AuditService;
+import com.tanmaysinghx.portalsso.client.security.OAuth2GrantRevoker;
 import com.tanmaysinghx.portalsso.common.error.BusinessRuleViolationException;
 import com.tanmaysinghx.portalsso.common.error.ErrorCode;
 import com.tanmaysinghx.portalsso.common.error.ResourceNotFoundException;
@@ -43,6 +44,7 @@ public class AccountService {
     private final KnownDeviceRepository knownDeviceRepository;
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
     private final AuditService auditService;
+    private final OAuth2GrantRevoker grantRevoker;
 
     public AccountService(
             UserRepository userRepository,
@@ -51,7 +53,8 @@ public class AccountService {
             MfaService mfaService,
             KnownDeviceRepository knownDeviceRepository,
             FindByIndexNameSessionRepository<? extends Session> sessionRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            OAuth2GrantRevoker grantRevoker) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
@@ -59,6 +62,7 @@ public class AccountService {
         this.knownDeviceRepository = knownDeviceRepository;
         this.sessionRepository = sessionRepository;
         this.auditService = auditService;
+        this.grantRevoker = grantRevoker;
     }
 
     @Transactional(readOnly = true)
@@ -120,6 +124,7 @@ public class AccountService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
+        grantRevoker.revokeAllForPrincipal(user.getEmail());
         int signedOut = signOutOtherSessions(email, currentSessionId);
         auditService.record(
                 AuditAction.USER_PASSWORD_CHANGED, user.getId(), user.getEmail(), "otherSessionsSignedOut=" + signedOut);

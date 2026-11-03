@@ -70,6 +70,9 @@ RUN apt-get update \
 RUN groupadd --gid 1001 portal \
     && useradd --uid 1001 --gid portal --home /app portal
 
+ENV PORTAL_HOME=/var/lib/portal-sso
+RUN mkdir -p "$PORTAL_HOME" && chown portal:portal "$PORTAL_HOME" && chmod 700 "$PORTAL_HOME"
+
 WORKDIR /app
 COPY --from=server --chown=portal:portal /build/portal-server.jar app.jar
 

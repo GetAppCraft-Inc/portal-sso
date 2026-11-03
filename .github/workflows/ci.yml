@@ -164,6 +164,10 @@ jobs:
         working-directory: portal-client
         run: npm ci
 
+      - name: Audit shipped console dependencies
+        working-directory: portal-client
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Unit tests
         working-directory: portal-client
         run: npx ng test --watch=false

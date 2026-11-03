@@ -10,6 +10,7 @@ import com.tanmaysinghx.portalsso.security.password.PasswordPolicy.PasswordPolic
 import com.tanmaysinghx.portalsso.setup.InitialAdminService;
 import com.tanmaysinghx.portalsso.setup.Organization;
 import com.tanmaysinghx.portalsso.setup.SetupKeyService;
+import com.tanmaysinghx.portalsso.setup.SetupLicense;
 import com.tanmaysinghx.portalsso.user.entity.User;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -66,7 +67,8 @@ public class SetupController {
             boolean isEmbeddedDatabase,
             String databaseProduct,
             String configFile,
-            Organization organization) {}
+            Organization organization,
+            String licenseId) {}
 
     public record SetupInitializeRequest(
             @NotBlank(message = "Setup key is required") String setupKey,
@@ -76,7 +78,9 @@ public class SetupController {
             String lastName,
             @Size(max = 100, message = "Organization name must be at most 100 characters") String organizationName,
             @Size(max = 1000) String logoUrl,
-            @Size(max = 1000) String supportUrl) {
+            @Size(max = 1000) String supportUrl,
+            Boolean licenseAccepted,
+            String licenseId) {
 
         Organization organization() {
             return new Organization(organizationName, logoUrl, supportUrl);
@@ -98,7 +102,8 @@ public class SetupController {
                 dbStatus.isEmbedded(),
                 dbStatus.databaseProductName(),
                 setupRequired ? migrationService.resolveConfigFilePath() : null,
-                new Organization(branding.getProductName(), branding.getLogoUrl(), branding.getSupportUrl())));
+                new Organization(branding.getProductName(), branding.getLogoUrl(), branding.getSupportUrl()),
+                SetupLicense.ID));
     }
 
     @PostMapping("/initialize")
@@ -106,6 +111,7 @@ public class SetupController {
             @Valid @RequestBody SetupInitializeRequest request) {
         // Validated before the key is checked so a typo in the password does not cost the operator
         // their key, and after it again inside the transaction for the race.
+        SetupLicense.requireAcceptance(request.licenseAccepted(), request.licenseId());
         initialAdminService.validate(request.email(), request.password(), request.organization());
 
         if (!setupKeyService.consume(request.setupKey())) {
@@ -119,7 +125,9 @@ public class SetupController {
                     request.password(),
                     request.firstName(),
                     request.lastName(),
-                    request.organization());
+                    request.organization(),
+                    Boolean.TRUE.equals(request.licenseAccepted()),
+                    request.licenseId());
         } catch (RuntimeException e) {
             setupKeyService.restore(request.setupKey());
             throw e;

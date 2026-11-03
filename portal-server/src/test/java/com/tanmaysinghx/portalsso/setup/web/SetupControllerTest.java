@@ -57,7 +57,7 @@ class SetupControllerTest {
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SetupInitializeRequest(
-                                key, "newadmin@example.com", "SecureAdminPass123!", "First", "Last", null, null, null))))
+                                key, "newadmin@example.com", "SecureAdminPass123!", "First", "Last", null, null, null, true, "Apache-2.0"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PRTL-1011"));
 
@@ -71,7 +71,7 @@ class SetupControllerTest {
         mockMvc.perform(post("/api/public/setup/initialize")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new SetupInitializeRequest(
-                                "key", "newadmin@example.com", "SecureAdminPass123!", null, null, null, null, null))))
+                                "key", "newadmin@example.com", "SecureAdminPass123!", null, null, null, null, null, true, "Apache-2.0"))))
                 .andExpect(status().isForbidden());
     }
 }

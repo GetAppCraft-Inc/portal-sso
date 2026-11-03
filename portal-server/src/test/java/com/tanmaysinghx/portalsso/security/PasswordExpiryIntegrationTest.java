@@ -121,6 +121,10 @@ class PasswordExpiryIntegrationTest {
 
     @Test
     void changingItCompletesTheSignInAndRestartsTheClock() throws Exception {
+        String grantId = java.util.UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "INSERT INTO oauth2_authorization (id, registered_client_id, principal_name, authorization_grant_type) VALUES (?, ?, ?, ?)",
+                grantId, "expiry-test", EMAIL, "authorization_code");
         Cookie session = signIn(false).getResponse().getCookie("SESSION");
 
         MvcResult change = mockMvc.perform(post("/password-expired").cookie(session).with(csrf())
@@ -128,6 +132,8 @@ class PasswordExpiryIntegrationTest {
                 .andExpect(status().is3xxRedirection())
                 .andReturn();
         assertThat(change.getResponse().getRedirectedUrl()).isEqualTo("/");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE id = ?", Integer.class, grantId)).isZero();
 
         // Completing the sign-in rotates the session id.
         Cookie rotated = change.getResponse().getCookie("SESSION");

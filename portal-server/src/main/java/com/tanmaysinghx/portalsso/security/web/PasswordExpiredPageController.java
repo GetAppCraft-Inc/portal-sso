@@ -4,6 +4,7 @@ import com.tanmaysinghx.portalsso.audit.entity.AuditAction;
 import com.tanmaysinghx.portalsso.audit.service.AuditService;
 import com.tanmaysinghx.portalsso.client.entity.OAuthClient;
 import com.tanmaysinghx.portalsso.client.repository.OAuthClientRepository;
+import com.tanmaysinghx.portalsso.client.security.OAuth2GrantRevoker;
 import com.tanmaysinghx.portalsso.common.error.BusinessRuleViolationException;
 import com.tanmaysinghx.portalsso.security.mfa.MfaAuthenticationSuccessHandler;
 import com.tanmaysinghx.portalsso.security.password.PasswordPolicy;
@@ -44,6 +45,7 @@ public class PasswordExpiredPageController {
     private final SignInCompletion signInCompletion;
     private final OAuthClientRepository clientRepository;
     private final AuditService auditService;
+    private final OAuth2GrantRevoker grantRevoker;
 
     public PasswordExpiredPageController(
             UserRepository userRepository,
@@ -51,13 +53,15 @@ public class PasswordExpiredPageController {
             PasswordPolicy passwordPolicy,
             SignInCompletion signInCompletion,
             OAuthClientRepository clientRepository,
-            AuditService auditService) {
+            AuditService auditService,
+            OAuth2GrantRevoker grantRevoker) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
         this.signInCompletion = signInCompletion;
         this.clientRepository = clientRepository;
         this.auditService = auditService;
+        this.grantRevoker = grantRevoker;
     }
 
     @GetMapping("/password-expired")
@@ -106,6 +110,7 @@ public class PasswordExpiredPageController {
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
+        grantRevoker.revokeAllForPrincipal(user.getEmail());
         auditService.record(AuditAction.USER_PASSWORD_CHANGED, user.getId(), email, "reason=expired");
 
         HttpSession session = request.getSession();

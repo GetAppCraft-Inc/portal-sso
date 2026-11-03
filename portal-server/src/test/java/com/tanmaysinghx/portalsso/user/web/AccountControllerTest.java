@@ -26,6 +26,7 @@ import com.tanmaysinghx.portalsso.user.entity.User;
 import com.tanmaysinghx.portalsso.user.repository.RecoveryCodeRepository;
 import com.tanmaysinghx.portalsso.user.repository.UserRepository;
 import java.time.Instant;
+import java.util.UUID;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,7 @@ class AccountControllerTest {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     @Autowired private UserRepository userRepository;
     @Autowired private RecoveryCodeRepository recoveryCodeRepository;
     @Autowired private KnownDeviceRepository knownDeviceRepository;
@@ -147,6 +149,8 @@ class AccountControllerTest {
 
     @Test
     void changePasswordUpdatesHashSignsOutOtherSessionsAndAudits() throws Exception {
+        String grantId = insertGrant(EMAIL);
+        String unrelatedGrantId = insertGrant("unrelated-" + UUID.randomUUID() + "@example.com");
         String otherSessionId = createSessionFor(sessionRepository, EMAIL);
         assertThat(sessionRepository.findByPrincipalName(EMAIL)).containsKey(otherSessionId);
 
@@ -156,6 +160,12 @@ class AccountControllerTest {
                         .content(passwordBody(PASSWORD, NEW_PASSWORD)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.otherSessionsSignedOut").value(1));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE id = ?", Integer.class, grantId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM oauth2_authorization WHERE id = ?", Integer.class, unrelatedGrantId)).isEqualTo(1);
+        jdbcTemplate.update("DELETE FROM oauth2_authorization WHERE id = ?", unrelatedGrantId);
 
         User user = userRepository.findByEmail(EMAIL).orElseThrow();
         assertThat(passwordEncoder.matches(NEW_PASSWORD, user.getPasswordHash())).isTrue();
@@ -255,5 +265,12 @@ class AccountControllerTest {
 
     private static String passwordBody(String current, String next) {
         return "{\"currentPassword\":\"" + current + "\",\"newPassword\":\"" + next + "\"}";
+    }
+    private String insertGrant(String principal) {
+        String id = UUID.randomUUID().toString();
+        jdbcTemplate.update(
+                "INSERT INTO oauth2_authorization (id, registered_client_id, principal_name, authorization_grant_type) VALUES (?, ?, ?, ?)",
+                id, "credential-change-test", principal, "authorization_code");
+        return id;
     }
 }

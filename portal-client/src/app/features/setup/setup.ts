@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { PasswordPolicy, passwordChecklist } from '../../core/services/account.service';
@@ -11,10 +11,11 @@ import {
 import { SetupService } from '../../core/services/setup.service';
 import { ThemeService } from '../../core/services/theme.service';
 
-type Step = 'organization' | 'administrator' | 'database' | 'finish';
+type Step = 'license' | 'organization' | 'administrator' | 'database' | 'finish';
 type DatabaseChoice = 'EMBEDDED' | 'POSTGRESQL' | 'MYSQL';
 
 export const SETUP_STEPS: { id: Step; label: string }[] = [
+  { id: 'license', label: 'License' },
   { id: 'organization', label: 'Organization' },
   { id: 'administrator', label: 'Administrator' },
   { id: 'database', label: 'Database' },
@@ -22,7 +23,7 @@ export const SETUP_STEPS: { id: Step; label: string }[] = [
 ];
 
 /**
- * The first-run wizard: organization → administrator → database → get started.
+ * The first-run wizard: license → organization → administrator → database → get started.
  *
  * The database step comes after the administrator on purpose. Switching databases restarts the
  * server, and a restart issues a new setup key — so by the time the operator picks a database the
@@ -36,6 +37,7 @@ export const SETUP_STEPS: { id: Step; label: string }[] = [
 })
 export class Setup {
   private readonly setupService = inject(SetupService);
+  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly authService = inject(AuthService);
   private readonly dbService = inject(DatabaseMigrationService);
   private readonly router = inject(Router);
@@ -107,10 +109,16 @@ export class Setup {
       cta: 'Manage users',
     },
   ];
-  readonly step = signal<Step>('organization');
+  readonly step = signal<Step>('license');
+  readonly licenseAccepted = signal(false);
+  readonly licenseId = signal('');
+  readonly licenseText = signal<string | null>(null);
+  readonly licenseLoading = signal(false);
+  readonly licenseFailed = signal(false);
   readonly stepIndex = computed(() => this.steps.findIndex((s) => s.id === this.step()));
 
   readonly loading = signal(true);
+  readonly statusFailed = signal(false);
   readonly setupKeyIssued = signal(false);
   readonly setupKeyFile = signal<string | null>(null);
   readonly configFile = signal<string | null>(null);
@@ -168,6 +176,19 @@ export class Setup {
   });
 
   constructor() {
+    effect(() => {
+      this.step();
+      if (!this.loading()) {
+        requestAnimationFrame(() => this.elementRef.nativeElement.querySelector<HTMLElement>('h1')?.focus());
+      }
+    });
+    this.loadStatus();
+  }
+
+  loadStatus(): void {
+    this.loading.set(true);
+    this.statusFailed.set(false);
+    this.error.set(null);
     this.setupService.getStatus().subscribe({
       next: (status) => {
         if (!status.setupRequired) {
@@ -176,6 +197,8 @@ export class Setup {
           this.router.navigateByUrl('/sign-in');
           return;
         }
+        this.licenseId.set(status.licenseId);
+        this.loadLicense();
         this.setupKeyIssued.set(status.setupKeyIssued);
         this.setupKeyFile.set(status.setupKeyFile ?? null);
         this.configFile.set(status.configFile ?? null);
@@ -188,10 +211,31 @@ export class Setup {
         this.loading.set(false);
       },
       error: () => {
-        this.error.set('Could not reach the server. Check that Portal SSO is running and reload.');
+        this.statusFailed.set(true);
+        this.error.set('Could not reach the server. Check that Portal SSO is running, then try again.');
         this.loading.set(false);
       },
     });
+  }
+
+  loadLicense(): void {
+    this.licenseLoading.set(true);
+    this.licenseFailed.set(false);
+    this.setupService.getLicenseText().subscribe({
+      next: (text) => {
+        this.licenseLoading.set(false);
+        this.licenseText.set(text);
+      },
+      error: () => {
+        this.licenseLoading.set(false);
+        this.licenseFailed.set(true);
+      },
+    });
+  }
+
+  continueFromLicense(): void {
+    if (!this.licenseAccepted() || !this.licenseText() || !this.licenseId()) return;
+    this.goTo('organization');
   }
 
   // --- Organization ---------------------------------------------------------------------------
@@ -215,6 +259,12 @@ export class Setup {
   // --- Administrator --------------------------------------------------------------------------
 
   createAdministrator(): void {
+    if (this.submitting()) return;
+    if (!this.licenseAccepted() || !this.licenseText() || !this.licenseId()) {
+      this.goTo('license');
+      this.error.set('Read and accept the license before creating the administrator.');
+      return;
+    }
     this.error.set(null);
     const email = this.email().trim();
     const setupKey = this.setupKey().trim();
@@ -239,6 +289,8 @@ export class Setup {
     this.submitting.set(true);
     this.setupService
       .initialize({
+        licenseAccepted: this.licenseAccepted(),
+        licenseId: this.licenseId(),
         setupKey,
         email,
         password: this.password(),
@@ -276,7 +328,7 @@ export class Setup {
         if (user.status === 'second-step') {
           window.location.assign(user.path);
         } else if (user.status === 'authenticated') {
-          this.step.set('database');
+          this.step.set(this.isEmbeddedDatabase() ? 'database' : 'finish');
         } else {
           this.router.navigateByUrl('/sign-in');
         }
@@ -303,12 +355,16 @@ export class Setup {
   }
 
   testConnection(): void {
+    if (this.testing() || this.switching()) return;
+    const request = this.connectionRequest();
     this.testing.set(true);
     this.testResult.set(null);
-    this.dbService.testConnection(this.connectionRequest()).subscribe({
+    this.dbService.testConnection(request).subscribe({
       next: (res) => {
         this.testing.set(false);
-        this.testResult.set(res);
+        if (JSON.stringify(request) === JSON.stringify(this.connectionRequest())) {
+          this.testResult.set(res);
+        }
       },
       error: (err) => {
         this.testing.set(false);
@@ -319,6 +375,7 @@ export class Setup {
 
   /** Copies everything created so far into the new database, saves it to the config file, restarts. */
   switchDatabase(): void {
+    if (this.switching() || this.testing() || !this.testResult()?.success) return;
     this.error.set(null);
     this.switching.set(true);
     this.dbService.migrate({ ...this.connectionRequest(), saveConfiguration: true }).subscribe({

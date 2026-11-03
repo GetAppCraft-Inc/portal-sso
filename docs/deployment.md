@@ -3,7 +3,7 @@
 Portal SSO is engineered with a **Jenkins-style self-hosting philosophy**:
 - **Instant 10-Second Setup**: Run standalone or with Docker using a single command. Zero manual database setup required for local evaluation.
 - **First-Run Web Setup Wizard**: No digging through hundreds of lines of console logs to hunt for a temporary password. Open your browser and set your root credentials in seconds.
-- **1-Click Dynamic Database Migration**: Start on embedded H2 and migrate to production PostgreSQL or MySQL directly within the web UI with zero downtime and automatic hot-restart.
+- **1-Click Dynamic Database Migration**: Start on embedded H2 and migrate to production PostgreSQL or MySQL directly within the web UI with a planned restart.
 
 ---
 
@@ -16,8 +16,8 @@ Run Portal SSO with its embedded persistent database:
 docker run -d \
   --name portal-sso \
   --restart unless-stopped \
-  -p 8080:8080 \
-  -v portal-sso-data:/root/.portal-sso \
+  -p 127.0.0.1:8080:8080 \
+  -v portal-sso-data:/var/lib/portal-sso \
   tanmaysinghx/portal-sso:latest
 ```
 
@@ -32,66 +32,50 @@ Portal SSO **automatically detects** MySQL from your connection string, sets `TI
 docker run -d \
   --name portal-sso \
   --restart unless-stopped \
-  -p 8080:8080 \
-  -e DB_URL='jdbc:mysql://your-mysql-host:3306/portalsso?ssl-mode=REQUIRED' \
+  -p 127.0.0.1:8080:8080 \
+  -e DB_URL='jdbc:mysql://your-mysql-host:3306/portalsso?sslMode=VERIFY_IDENTITY' \
   -e DB_USERNAME='your_username' \
   -e DB_PASSWORD='your_password' \
   -e ISSUER_URL='https://sso.yourdomain.com' \
   -e FORWARD_HEADERS_STRATEGY='FRAMEWORK' \
-  -v portal-sso-data:/root/.portal-sso \
+  -v portal-sso-data:/var/lib/portal-sso \
   tanmaysinghx/portal-sso:latest
 ```
 
 ---
 
 ### Option C: Production Docker Compose (PostgreSQL)
-For a complete, self-contained production deployment with PostgreSQL:
+Use the repository's `compose.yaml` and `.env.example` as the single source of configuration:
 
-```yaml
-# compose.yaml
-services:
-  portal-sso:
-    image: tanmaysinghx/portal-sso:latest
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      DB_URL: jdbc:postgresql://db:5432/portalsso
-      DB_USERNAME: portal
-      DB_PASSWORD: ${DB_PASSWORD:-change_this_secure_password}
-      ISSUER_URL: ${ISSUER_URL:-http://localhost:8080}
-      SERVER_SERVLET_SESSION_COOKIE_SECURE: ${COOKIE_SECURE:-true}
-      FORWARD_HEADERS_STRATEGY: ${FORWARD_HEADERS_STRATEGY:-FRAMEWORK}
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - portal-sso-data:/root/.portal-sso
-
-  db:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: portalsso
-      POSTGRES_USER: portal
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_this_secure_password}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U portal -d portalsso"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - portal-db-data:/var/lib/postgresql/data
-
-volumes:
-  portal-sso-data:
-  portal-db-data:
-```
-
-Launch with:
 ```bash
-docker compose up -d
+cp .env.example .env
+# Set DB_PASSWORD, ISSUER_URL=https://sso.yourdomain.com and
+# APP_SECURITY_MFA_ENCRYPTION_KEY (openssl rand -base64 32).
+chmod 600 .env
+docker compose up -d --build
 ```
+
+Leave the two bootstrap administrator fields empty to use the setup wizard. Read its key with
+`docker compose exec app cat /var/lib/portal-sso/secrets/initialAdminPassword`.
+If you use bootstrap credentials, remove both after setup; subsequent starts do not require them.
+
+Compose binds to `127.0.0.1:8080` for a host TLS reverse proxy. Set `BIND_ADDRESS` only when a
+controlled network needs access. With `FORWARD_HEADERS_STRATEGY=FRAMEWORK`, allow access only
+through the trusted proxy and have it overwrite incoming forwarded headers.
+
+The `portal-app-data` volume stores configuration and secrets even with an external database.
+Back up it, the database, and the configured encryption key together; test restoration before
+launch. Existing images using `/root/.portal-sso` require copying their saved home into the new
+volume and granting UID/GID 1001 access before upgrading. Do not discard the old volume.
+
+Health probes are available at `/actuator/health/liveness` and `/actuator/health/readiness`.
+Readiness checks the database; liveness checks application state only. Public responses contain
+status only. Additional exposed Actuator endpoints require `ROLE_ADMIN`; only health is exposed
+by default. Probe configuration follows the [Spring Boot Actuator documentation](https://docs.spring.io/spring-boot/reference/actuator/endpoints.html).
+
+Before production traffic, verify HTTPS discovery and sign-in/MFA, backup restoration, SMTP
+notifications, and database migration against your target PostgreSQL or MySQL version. Allow a
+maintenance window for in-app database migration and prevent writes while copying data.
 
 ---
 
@@ -179,15 +163,20 @@ There are two ways to set up a new server. Use whichever suits you; they can be 
 On first start the server prints a one-time **setup key** and saves it to
 `<portalHome>/secrets/initialAdminPassword`. Open `http://your-server:8080` (you land on `/setup`):
 
-1. **Organization** — company name, logo URL and support link. Shown on the sign-in page (in every
+1. **License** — read the bundled Apache License 2.0 and check the agreement box. Acceptance
+   is recorded with the new administrator when setup succeeds.
+2. **Organization** — company name, logo URL and support link. Shown on the sign-in page (in every
    browser) and in every email. All optional, all editable later in Settings.
-2. **Administrator** — paste the setup key, then your email, name and password (12+ characters).
+3. **Administrator** — paste the setup key, then your email, name and password (12+ characters).
    You are signed in when this step completes, and the setup endpoint closes for good.
-3. **Database** — keep the built-in H2 database (fine for a trial or a small team), or connect
+4. **Database** — keep the built-in H2 database (fine for a trial or a small team), or connect
    **PostgreSQL 15+** or **MySQL 8.0+ / MariaDB**. *Test connection*, then *Switch database &
    restart*: everything created so far is copied across, the connection is saved to the
    configuration file, the server restarts, and you sign in again on the new database.
-4. **Get started** — links to connect your first app, set up email and add users.
+5. **Get started** — links to connect your first app, set up email and add users.
+
+Optional logo and support-link fields are collapsed by default. If an external database is already
+configured, the wizard skips the database-choice step after creating the administrator.
 
 The database step comes after the administrator on purpose: switching databases restarts the server,
 and a restart would issue a new setup key. Skipped it? The same move is under **Settings → Database**.
@@ -243,7 +232,7 @@ If you started on the local embedded database and are ready to move to productio
 
 When running behind a reverse proxy or load balancer terminating SSL:
 
-1. Set `FORWARD_HEADERS_STRATEGY=FRAMEWORK` (or `--forward-headers-strategy=FRAMEWORK`).
+1. Set `FORWARD_HEADERS_STRATEGY=FRAMEWORK` (or `--server.forward-headers-strategy=FRAMEWORK`).
 2. Configure your Nginx virtual host:
 
 ```nginx
@@ -258,7 +247,7 @@ server {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Port $server_port;
     }
@@ -282,7 +271,7 @@ docker volume rm portal-sso-dev-data portal-sso-data 2>/dev/null || true
 docker run -d \
   --name portal-sso \
   --restart unless-stopped \
-  -p 8080:8080 \
-  -v portal-sso-data:/root/.portal-sso \
+  -p 127.0.0.1:8080:8080 \
+  -v portal-sso-data:/var/lib/portal-sso \
   tanmaysinghx/portal-sso:latest
 ```

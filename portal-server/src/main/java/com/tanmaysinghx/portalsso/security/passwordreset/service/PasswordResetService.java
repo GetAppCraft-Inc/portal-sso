@@ -2,6 +2,7 @@ package com.tanmaysinghx.portalsso.security.passwordreset.service;
 
 import com.tanmaysinghx.portalsso.audit.entity.AuditAction;
 import com.tanmaysinghx.portalsso.audit.service.AuditService;
+import com.tanmaysinghx.portalsso.client.security.OAuth2GrantRevoker;
 import com.tanmaysinghx.portalsso.common.error.BusinessRuleViolationException;
 import com.tanmaysinghx.portalsso.common.error.ErrorCode;
 import com.tanmaysinghx.portalsso.mail.service.EmailSettingsService;
@@ -58,6 +59,7 @@ public class PasswordResetService {
     private final FindByIndexNameSessionRepository<? extends Session> sessionRepository;
     private final PasswordResetProperties properties;
     private final AuditService auditService;
+    private final OAuth2GrantRevoker grantRevoker;
 
     public PasswordResetService(
             PasswordResetTokenRepository tokenRepository,
@@ -69,7 +71,8 @@ public class PasswordResetService {
             EmailSettingsService emailSettingsService,
             FindByIndexNameSessionRepository<? extends Session> sessionRepository,
             PasswordResetProperties properties,
-            AuditService auditService) {
+            AuditService auditService,
+            OAuth2GrantRevoker grantRevoker) {
         this.tokenRepository = tokenRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -80,6 +83,7 @@ public class PasswordResetService {
         this.sessionRepository = sessionRepository;
         this.properties = properties;
         this.auditService = auditService;
+        this.grantRevoker = grantRevoker;
     }
 
     /**
@@ -194,6 +198,7 @@ public class PasswordResetService {
 
         tokenRepository.consumeAllOutstandingFor(user.getId(), now);
 
+        grantRevoker.revokeAllForPrincipal(user.getEmail());
         int signedOut = 0;
         for (String sessionId : Map.copyOf(sessionRepository.findByPrincipalName(user.getEmail())).keySet()) {
             sessionRepository.deleteById(sessionId);

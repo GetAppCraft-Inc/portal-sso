@@ -10,7 +10,7 @@ and is out of date; this file is the one to trust and to update.
   no plaintext secrets, audit records field names but never values, mail through `MailService`.
 - Size: **S** ≈ a session, **M** ≈ a few sessions, **L** = needs a design note first.
 
-_Last reviewed: 2026-11-01 (guided setup + config file; H2 restart fix)_
+_Last reviewed: 2026-11-03 (production hardening and dependency patches)_
 
 ---
 
@@ -63,9 +63,11 @@ _Last reviewed: 2026-11-01 (guided setup + config file; H2 restart fix)_
 - Thymeleaf HTML + text templates: welcome, new-device, sign-in notice, magic links; branding & per-message switches
 
 ### Operations
+- **License agreement and streamlined setup (2026-11-03)**: bundled Apache License 2.0 is the first step, with unchecked explicit acceptance enforced before spending the setup key and recorded with administrator creation. Optional branding is collapsed, configured external databases skip selection, status failures offer retry, and stale connection tests cannot enable migration. 41 frontend tests, 11 backend setup tests, and eight packaged-JAR browser tests pass.
+- **Production hardening (2026-11-03)**: explicit readiness/liveness probes, database-aware readiness, admin-only additional Actuator endpoints, persistent unprivileged container home, localhost Compose binding, optional bootstrap credentials, corrected deployment examples; password change/reset/expiry revoke stored OAuth grants. Angular 21 security patches and runtime dependency audit gate. Validation and outstanding rollout checks: `docs/PRODUCTION_READINESS.md`.
 - Single JAR with embedded Angular SPA; Docker image + Compose; `install.sh`
 - Zero-config H2 boot and first-run setup wizard: a one-time setup key (printed + `secrets/initialAdminPassword`) unlocks the wizard, the operator creates their own admin and is signed straight in; no `admin@localhost` account, no unauthenticated admin creation, existing accounts never adopted
-- **Guided setup at `/setup`**: Organization (name, logo, support link — saved server-side, so every browser's sign-in page is branded via `GET /api/public/branding`) → Administrator (setup key) → Database (keep H2, or PostgreSQL/MySQL: test, copy, save, restart) → Get started
+- **Guided setup at `/setup`**: License agreement → Organization (name, logo, support link — saved server-side, so every browser's sign-in page is branded via `GET /api/public/branding`) → Administrator (setup key) → Database (keep H2, or PostgreSQL/MySQL: test, copy, save, restart) → Get started
 - **Config-file setup**: first boot writes a fully commented `<portalHome>/portal.properties` listing every option; `--config=<file>` / `PORTAL_CONFIG` points elsewhere; `app.organization.*` fills in branding the console has not set; console writes merge into the file instead of overwriting it
 - **Open from My Apps, already signed in**: optional per-app **Sign-in URL** (OIDC third-party initiated login). Tiles open it with `iss` + `target_link_uri`, the app starts sign-in, the Portal session answers silently. SDK 1.1.0 adds `handleInitiatedLogin()`; agent guide and docs tell integrators to build the route
 - **Security & correctness sweep (2026-11-01)**: access-request approval and external-API registration can no longer grant `ROLE_ADMIN`; external app login counts failures toward lockout and stops revealing correct passwords on locked accounts; disabling a user ends their sessions and revokes their refresh tokens; `return_url` open redirect closed (`ReturnUrlPolicy`); email sign-in is case-insensitive (changeset 025 normalizes stored addresses); DB migration now copies access requests, registration/retention settings and consents (guarded by `MigrationTableCoverageTest`); create-user form shows the real password policy; role names are normalized (`support` → `ROLE_SUPPORT`)
@@ -93,7 +95,7 @@ _(nothing yet)_
 | 3 | **Email verification + admin invitations** | M | Verify the address on self-sign-up; admin "Invite user" sends a set-password link instead of an admin choosing a password. Adds `email_verified` claim. |
 | 4 | **Signing-key rotation & retirement** | M | Admin "Rotate now" + optional scheduled rotation; old keys stay in JWKS for a grace period, then retire. Today keys are only generated on first boot. |
 | 5 | **OIDC logout, done properly** | S–M | Confirm RP-initiated logout (`end_session_endpoint`) works with stored `post_logout_redirect_uris`, add them to onboarding UI/snippets, then add back-channel logout to notify apps. |
-| 6 | **Health & metrics** | S | Actuator `health`/`readiness`/`liveness` for Docker/K8s, optional Prometheus endpoint (sign-ins, failures, token issuance) behind admin auth or a separate port. |
+| 6 | **Metrics export** | S | Health/readiness/liveness shipped. Add optional Prometheus endpoint (sign-ins, failures, token issuance) behind admin auth or a separate port. |
 
 ## 🔭 P1 — strong differentiators
 
@@ -126,7 +128,7 @@ _(nothing yet)_
 ---
 
 ## 🧹 Housekeeping (pick up alongside features)
-- Follow-ups from My Account / reset: "your password was changed" security email (new template + switch); revoke the user's OAuth refresh tokens on password change and reset; email reminder N days before expiry (today the warning is in the console only).
+- Follow-ups from My Account / reset: "your password was changed" security email (new template + switch); email reminder N days before expiry (today the warning is in the console only).
 - Password expiry is enforced at the password step; a sign-in by magic link or a still-valid remember-me cookie is not stopped by an expired password (both are shown the banner).
 - Rewrite `docs/FEATURES.md` from this file (its "Planned" rows are mostly already shipped).
 - Frontend test coverage is thin (4 spec files vs 56 backend test classes).

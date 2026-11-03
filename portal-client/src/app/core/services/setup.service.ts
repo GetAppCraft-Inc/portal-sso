@@ -5,6 +5,7 @@ import { PasswordPolicy } from './account.service';
 
 export interface SetupStatusResponse {
   setupRequired: boolean;
+  licenseId: string;
   /** False while setup is required means the wizard cannot be used: auto-generation is off. */
   setupKeyIssued: boolean;
   /** Where the operator finds the key; present only while setup is required. */
@@ -27,6 +28,8 @@ export interface SetupOrganization {
 }
 
 export interface SetupInitializeRequest {
+  licenseAccepted: boolean;
+  licenseId: string;
   setupKey: string;
   email: string;
   password: string;
@@ -50,6 +53,10 @@ export class SetupService {
 
   getStatus(): Observable<SetupStatusResponse> {
     return this.http.get<SetupStatusResponse>(`${this.baseUrl}/status`);
+  }
+
+  getLicenseText(): Observable<string> {
+    return this.http.get('legal/LICENSE.txt', { responseType: 'text' });
   }
 
   initialize(request: SetupInitializeRequest): Observable<SetupInitializeResponse> {

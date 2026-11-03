@@ -22,8 +22,18 @@ const ADMIN = {
 
 test.describe.configure({ mode: 'serial' });
 
+async function acceptLicense(page: Page) {
+  const accept = page.getByRole('checkbox', { name: 'I have read and agree to the Apache License 2.0.' });
+  await expect(page.getByRole('region', { name: 'Apache License 2.0' })).toContainText('END OF TERMS AND CONDITIONS');
+  await expect(accept).not.toBeChecked();
+  await expect(page.getByRole('button', { name: 'Accept and continue' })).toBeDisabled();
+  await accept.check();
+  await page.getByRole('button', { name: 'Accept and continue' }).click();
+}
+
 async function throughOrganizationStep(page: Page) {
   await page.goto('/setup');
+  await acceptLicense(page);
   await page.getByLabel('Organization name').fill(ORGANIZATION);
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('heading', { name: 'Create the first administrator' })).toBeVisible();
@@ -44,13 +54,31 @@ test('a fresh install opens the setup wizard, not a sign-in form', async ({ page
   await expect(page).toHaveURL(/\/setup/);
   await expect(page.getByRole('heading', { name: 'Welcome to Portal SSO' })).toBeVisible();
 
+  await acceptLicense(page);
+
   // The organization step previews what users will see.
   await page.getByLabel('Organization name').fill(ORGANIZATION);
   await expect(page.getByText(`Sign in to ${ORGANIZATION}`)).toBeVisible();
 });
 
+test('license acceptance survives Back and can be withdrawn', async ({ page }) => {
+  await page.goto('/setup');
+  await acceptLicense(page);
+  await page.getByLabel('Organization name').fill(ORGANIZATION);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  const checkbox = page.getByRole('checkbox', { name: 'I have read and agree to the Apache License 2.0.' });
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+  await expect(page.getByRole('button', { name: 'Accept and continue' })).toBeDisabled();
+  await checkbox.check();
+  await page.getByRole('button', { name: 'Accept and continue' }).click();
+  await expect(page.getByLabel('Organization name')).toHaveValue(ORGANIZATION);
+});
+
 test('a logo that is not a web address is caught before the key is needed', async ({ page }) => {
   await page.goto('/setup');
+  await acceptLicense(page);
+  await page.getByText('Logo and support link (optional)', { exact: true }).click();
   await page.getByLabel(/Logo URL/).fill('logo.png');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('alert')).toContainText('Logo URL must be a full http:// or https:// address');

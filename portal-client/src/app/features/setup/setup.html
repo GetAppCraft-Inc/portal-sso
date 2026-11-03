@@ -34,7 +34,7 @@
 
   <main class="mx-auto w-full max-w-2xl px-5 pb-16 pt-4 sm:px-8">
     <!-- Progress -->
-    <ol class="mb-8 grid grid-cols-4 gap-2" aria-label="Setup progress">
+    <ol class="mb-8 grid grid-cols-5 gap-2" aria-label="Setup progress">
       @for (s of steps; track s.id; let i = $index) {
         <li class="min-w-0" [attr.aria-current]="s.id === step() ? 'step' : null">
           <div
@@ -69,9 +69,11 @@
 
     @if (loading()) {
       <p class="text-sm" [class]="mutedClass()" role="status">Checking this server…</p>
+    } @else if (statusFailed()) {
+      <button type="button" (click)="loadStatus()" [class]="primaryButtonClass">Try again</button>
     } @else if (!setupKeyIssued()) {
       <div [class]="cardClass()" role="status">
-        <h1 class="text-lg font-semibold" [class]="headingClass()">Setup is locked on this server</h1>
+        <h1 tabindex="-1" class="text-lg font-semibold" [class]="headingClass()">Setup is locked on this server</h1>
         <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
           No administrator exists and setup-key generation is turned off. Add these to
           <code class="break-all font-mono text-xs">{{ configFile() || 'portal.properties' }}</code>
@@ -85,35 +87,73 @@ app.bootstrap.admin-password=…</pre>
       </div>
     } @else {
       @switch (step()) {
-        <!-- 1. Organization -->
-        @case ('organization') {
-          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Welcome to Portal SSO</h1>
+        @case ('license') {
+          <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Welcome to Portal SSO</h1>
           <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
-            Four short steps and your single sign-on is running. First, who is this for? Your users see this name
-            and logo on the sign-in page and in every email. All of it can be changed later.
+            Review the license, personalize your sign-in page, then create your administrator account.
+            Keep the setup key from your server handy. You can configure your database after signing in.
+          </p>
+          <form class="mt-6" [class]="cardClass()" (ngSubmit)="continueFromLicense()">
+            <h2 id="license-heading" class="text-lg font-semibold" [class]="headingClass()">Apache License 2.0</h2>
+            <p class="mt-1 text-xs" [class]="mutedClass()">Version 2.0 · January 2004</p>
+            @if (licenseLoading()) {
+              <p class="mt-4 text-sm" role="status" [class]="mutedClass()">Loading the license…</p>
+            } @else if (licenseFailed()) {
+              <p class="mt-4 text-sm" role="alert" [class]="mutedClass()">The license could not be loaded. Try again before continuing.</p>
+              <button type="button" class="mt-3" [class]="secondaryButtonClass()" (click)="loadLicense()">Retry license</button>
+            } @else {
+              <pre tabindex="0" role="region" aria-labelledby="license-heading"
+                class="mt-4 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border p-4 text-xs leading-6 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                [class]="themeService.isDark() ? 'border-ink-700 bg-ink-950 text-ink-300' : 'border-slate-200 bg-slate-50 text-slate-700'">{{ licenseText() }}</pre>
+              <a href="legal/LICENSE.txt" target="_blank" rel="noopener" class="mt-3 inline-block text-sm font-medium text-brand-600 underline">Open full license (new tab)</a>
+            }
+            <label class="mt-6 flex cursor-pointer items-start gap-3 text-sm leading-6" [class]="headingClass()">
+              <input type="checkbox" name="licenseAccepted" required class="mt-1 h-4 w-4 shrink-0 accent-brand-600"
+                [disabled]="licenseLoading() || licenseFailed() || !licenseText()"
+                [ngModel]="licenseAccepted()" (ngModelChange)="licenseAccepted.set($event)" />
+              <span>I have read and agree to the Apache License 2.0.</span>
+            </label>
+            <div class="mt-6 flex justify-end">
+              <button type="submit" [class]="primaryButtonClass"
+                [disabled]="!licenseAccepted() || !licenseText() || !licenseId() || licenseLoading() || licenseFailed()">Accept and continue</button>
+            </div>
+          </form>
+        }
+
+        <!-- Organization -->
+        @case ('organization') {
+          <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Personalize your sign-in page</h1>
+          <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
+            Add your organization’s name for the sign-in page and emails. These details are optional;
+            you can update them later in Settings.
           </p>
 
           <form class="mt-6" [class]="cardClass()" (ngSubmit)="continueFromOrganization()">
             <div class="space-y-4">
               <div>
-                <label for="org-name" [class]="labelClass()">Organization name</label>
+                <label for="org-name" [class]="labelClass()">Organization name <span class="font-normal opacity-70">(optional)</span></label>
                 <input id="org-name" name="organizationName" type="text" maxlength="100" autocomplete="organization"
                   [ngModel]="organizationName()" (ngModelChange)="organizationName.set($event)"
                   placeholder="Acme Corp" [class]="inputClass()" />
               </div>
-              <div>
-                <label for="org-logo" [class]="labelClass()">Logo URL <span class="font-normal opacity-70">(optional)</span></label>
-                <input id="org-logo" name="logoUrl" type="url" maxlength="1000" aria-describedby="org-logo-hint"
-                  [ngModel]="logoUrl()" (ngModelChange)="setLogoUrl($event)"
-                  placeholder="https://www.acme.com/logo.png" [class]="inputClass()" />
-                <p id="org-logo-hint" [class]="hintClass()">A full https:// address. Email clients load it themselves, so it must be public.</p>
-              </div>
-              <div>
-                <label for="org-support" [class]="labelClass()">Help / support link <span class="font-normal opacity-70">(optional)</span></label>
-                <input id="org-support" name="supportUrl" type="url" maxlength="1000"
-                  [ngModel]="supportUrl()" (ngModelChange)="supportUrl.set($event)"
-                  placeholder="https://support.acme.com" [class]="inputClass()" />
-              </div>
+              <details>
+                <summary class="cursor-pointer text-sm font-medium" [class]="mutedClass()">Logo and support link (optional)</summary>
+                <div class="mt-4 space-y-4">
+                  <div>
+                    <label for="org-logo" [class]="labelClass()">Logo URL <span class="font-normal opacity-70">(optional)</span></label>
+                    <input id="org-logo" name="logoUrl" type="url" maxlength="1000" aria-describedby="org-logo-hint"
+                      [ngModel]="logoUrl()" (ngModelChange)="setLogoUrl($event)"
+                      placeholder="https://www.acme.com/logo.png" [class]="inputClass()" />
+                    <p id="org-logo-hint" [class]="hintClass()">A full https:// address. Email clients load it themselves, so it must be public.</p>
+                  </div>
+                  <div>
+                    <label for="org-support" [class]="labelClass()">Help / support link <span class="font-normal opacity-70">(optional)</span></label>
+                    <input id="org-support" name="supportUrl" type="url" maxlength="1000"
+                      [ngModel]="supportUrl()" (ngModelChange)="supportUrl.set($event)"
+                      placeholder="https://support.acme.com" [class]="inputClass()" />
+                  </div>
+                </div>
+              </details>
             </div>
 
             <!-- What users will see -->
@@ -132,21 +172,22 @@ app.bootstrap.admin-password=…</pre>
               }
             </div>
 
-            <div class="mt-6 flex justify-end">
+            <div class="mt-6 flex items-center justify-between gap-3">
+              <button type="button" (click)="goTo('license')" [class]="secondaryButtonClass()">Back</button>
               <button type="submit" [class]="primaryButtonClass">Continue</button>
             </div>
           </form>
         }
 
-        <!-- 2. Administrator -->
+        <!-- Administrator -->
         @case ('administrator') {
-          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Create the first administrator</h1>
+          <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Create the first administrator</h1>
           <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
             Unlock this server with the one-time setup key, then create your own administrator account. You can add
             more administrators later.
           </p>
 
-          <form class="mt-6" [class]="cardClass()" (ngSubmit)="createAdministrator()">
+          <form #adminForm="ngForm" class="mt-6" [class]="cardClass()" (ngSubmit)="createAdministrator()">
             <div class="space-y-4">
               <div>
                 <label for="setup-key" [class]="labelClass()">Setup key</label>
@@ -210,7 +251,7 @@ app.bootstrap.admin-password=…</pre>
 
             <div class="mt-6 flex items-center justify-between gap-3">
               <button type="button" (click)="goTo('organization')" [disabled]="submitting()" [class]="secondaryButtonClass()">Back</button>
-              <button type="submit" [disabled]="submitting()" [class]="primaryButtonClass">
+              <button type="submit" [disabled]="submitting() || adminForm.invalid" [class]="primaryButtonClass">
                 @if (submitting()) {
                   <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -223,9 +264,9 @@ app.bootstrap.admin-password=…</pre>
           </form>
         }
 
-        <!-- 3. Database -->
+        <!-- Database -->
         @case ('database') {
-          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Choose where data is stored</h1>
+          <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight" [class]="headingClass()">Choose where data is stored</h1>
 
           @if (!isEmbeddedDatabase()) {
             <p class="mt-2 text-sm leading-6" [class]="mutedClass()">
@@ -251,7 +292,7 @@ app.bootstrap.admin-password=…</pre>
               Settings → Database.
             </p>
 
-            <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Database">
+            <fieldset [disabled]="switching() || testing()" class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Database">
               <button type="button" role="radio" [attr.aria-checked]="dbChoice() === 'EMBEDDED'" (click)="chooseDatabase('EMBEDDED')" [class]="choiceClass(dbChoice() === 'EMBEDDED')">
                 <span class="text-sm font-semibold" [class]="headingClass()">Built-in (H2)</span>
                 <span class="mt-1 text-xs leading-5" [class]="mutedClass()">No setup. For trials and small teams.</span>
@@ -264,7 +305,7 @@ app.bootstrap.admin-password=…</pre>
                 <span class="text-sm font-semibold" [class]="headingClass()">MySQL / MariaDB</span>
                 <span class="mt-1 text-xs leading-5" [class]="mutedClass()">MySQL 8.0+.</span>
               </button>
-            </div>
+            </fieldset>
 
             @if (dbChoice() === 'EMBEDDED') {
               <div class="mt-6 flex items-center justify-between gap-3">
@@ -276,7 +317,7 @@ app.bootstrap.admin-password=…</pre>
                 <p class="text-xs leading-5" [class]="mutedClass()">
                   Create an empty database and a user that owns it first; Portal SSO creates its own tables.
                 </p>
-                <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <fieldset [disabled]="switching() || testing()" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
                   <div class="sm:col-span-2">
                     <label for="db-host" [class]="labelClass()">Host</label>
                     <input id="db-host" name="host" type="text" required [ngModel]="dbHost()" (ngModelChange)="dbHost.set($event); testResult.set(null)" [class]="inputClass()" />
@@ -299,7 +340,7 @@ app.bootstrap.admin-password=…</pre>
                       <input id="db-password" name="dbPassword" type="password" autocomplete="new-password" [ngModel]="dbPassword()" (ngModelChange)="dbPassword.set($event); testResult.set(null)" [class]="inputClass()" />
                     </div>
                   </div>
-                </div>
+                </fieldset>
 
                 @if (testResult(); as result) {
                   <p class="mt-4 rounded-lg border px-3 py-2 text-xs leading-5" role="status"
@@ -320,7 +361,7 @@ app.bootstrap.admin-password=…</pre>
                   <button type="button" (click)="testConnection()" [disabled]="testing() || switching()" [class]="secondaryButtonClass()">
                     {{ testing() ? 'Testing…' : 'Test connection' }}
                   </button>
-                  <button type="submit" [disabled]="!testResult()?.success || switching()" [class]="primaryButtonClass"
+                  <button type="submit" [disabled]="!testResult()?.success || testing() || switching()" [class]="primaryButtonClass"
                     [title]="testResult()?.success ? '' : 'Test the connection first'">
                     {{ switching() ? 'Moving data…' : 'Switch database & restart' }}
                   </button>
@@ -330,9 +371,9 @@ app.bootstrap.admin-password=…</pre>
           }
         }
 
-        <!-- 4. Get started -->
+        <!-- Get started -->
         @case ('finish') {
-          <h1 class="text-2xl font-semibold tracking-tight" [class]="headingClass()">
+          <h1 tabindex="-1" class="text-2xl font-semibold tracking-tight" [class]="headingClass()">
             {{ organizationName().trim() || 'Portal SSO' }} is ready
           </h1>
           <p class="mt-2 text-sm leading-6" [class]="mutedClass()">

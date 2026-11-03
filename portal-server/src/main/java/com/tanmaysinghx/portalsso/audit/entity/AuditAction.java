@@ -25,6 +25,7 @@ public enum AuditAction {
     USER_ROLES_CHANGED(TargetType.USER, "User roles changed"),
     /** The first administrator, created by the application at startup from operator configuration. */
     ADMIN_BOOTSTRAPPED(TargetType.USER, "Administrator bootstrapped"),
+    SETUP_LICENSE_ACCEPTED(TargetType.USER, "Setup license accepted"),
     USER_LOGIN_SUCCESS(TargetType.USER, "User signed in successfully"),
     USER_LOGIN_FAILED(TargetType.USER, "User sign-in attempt failed"),
 

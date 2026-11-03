@@ -278,3 +278,9 @@ distribution/       systemd unit
 | [AI_AGENT_INTEGRATION.md](docs/AI_AGENT_INTEGRATION.md) | Brief to give coding agents integrating an app |
 | [POPUP_LOGIN_QUICKSTART.md](docs/POPUP_LOGIN_QUICKSTART.md) | SDK usage by framework |
 | [AGENTS.md](AGENTS.md) | Conventions for AI agents working on this repo |
+
+## License
+
+Portal SSO is licensed under the [Apache License, Version 2.0](LICENSE.txt).
+The first-run wizard displays the bundled license and requires explicit acceptance before
+creating the administrator. Third-party dependencies retain their respective licenses.
