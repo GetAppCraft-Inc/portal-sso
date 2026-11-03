@@ -18,7 +18,10 @@ public final class KnownProducts {
     private static final Map<String, Product> PRODUCTS = Map.of(
             "eggless-observability",
             new Product("eggless-observability", "Eggless Observability", "Observability",
-                    "Logs, live tail and alerts for your applications"));
+                    "Logs, live tail and alerts for your applications"),
+            "keystone",
+            new Product("keystone", "Keystone Vault", "Security",
+                    "Encrypted secrets and configuration files your applications load at startup"));
 
     private KnownProducts() {}
 
